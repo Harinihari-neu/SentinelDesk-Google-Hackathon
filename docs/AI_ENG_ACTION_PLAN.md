@@ -106,13 +106,26 @@ Outputs:
 
 - **`unsupported_number` may over-fire** on harmless numbers (step lists, version strings). Phase 2 task 6 checks this. Possible fix: ignore numbers of 1–2 digits followed by `.` or `)` at line start.
 - **The promise-term check is a fixed list.** It catches the common cases; it isn't a full claim verifier. Say so honestly in Q&A.
-- **Gate `RISKY_ASKS`** uses substring matching (`credit` also matches `credit card`). Tune using the adversarial set.
+- **Gate `RISKY_ASKS`** uses prefix matching. `credit card` is excepted since v1.4; other prefixes are untested on real data.
 - **Stub triage gets queue badly wrong** (macro-F1 ~0.07 on smoke). That's expected; it's only there to wire things up.
 - **`langdetect` is unreliable on very short text.** The stopword fallback only runs if langdetect is missing.
 - **Escalated tickets get no draft.** That's deliberate: it keeps the "share of tickets touching an LLM" down. If judges want a draft for the human reviewer, add a flag to draft escalated tickets too, marked "for reviewer".
 - **Python 3.9** works, but Google's libraries print end-of-life warnings. Use 3.10+ on the demo machine.
 
 ## Change log
+- v1.4 (2026-11-21): guardrails (Task 3). Full write-up: `docs/GUARDRAILS.md`.
+  - `eval/sets/adversarial.jsonl` (58 cases) and `adversarial_fresh.jsonl` (18) drafted for P4. Cases carry their own `precedents`.
+  - `eval/metrics.py`: `case_failures()` checks every **sent** reply (holding replies too) on folded text; `case_passes_legacy()` kept; new `over_blocking_rate`.
+  - `eval/run.py`: `--adv-set`, `--gate-bypass` (layer test), per-category table, adversarial fields in records.
+  - `app/pipeline.py`: `run_ticket(precedents=...)` for eval.
+  - `app/guard.py` (new): injection, sensitive-content, poisoned-precedent, credential-request and link detectors.
+  - `app/gate.py`: `possible_injection`, `sensitive_content`, `unsupported_language`, `suspicious_precedent`; `credit` ≠ "credit card".
+  - `app/checks.py`: `credential_request`, `unsupported_contact` (`CONTACT_ALLOWLIST`).
+  - `app/textproc.py`: `fold()`; `mask_pii` adds PASSWORD, SECRET, CARD (Luhn).
+  - `app/draft.py`: `MAX_TICKET_CHARS = 3000` (prompt wording unchanged; `PROMPT_VERSION` stays v1.1).
+  - Results: `guard-baseline` 0.672 → `guard-v1` 1.000 (over-blocking 1/10 → 0/10); fresh set `guard-fresh-baseline` 0.500 → `guard-fresh-v1` 0.778.
+  - `tests/test_guardrails.py`: 17 offline tests.
+  - Shared-working-tree incident: commits recovered onto `feat/guardrails` by cherry-pick; `reuse_draft()` removed here (belongs to PR #3). Rule: one agent per worktree.
 - v1.3 (2026-11-21): error handling, German fixes, prompt v1.1. All numbers on gemini-3.5-flash-lite.
   - **German test** (`eval/german_probe.py`, `eval/sets/translation_pairs.jsonl`): 10 hand-written EN/DE ticket pairs, each with its own precedent; gate bypassed. Conditions: en-en, de-de, de-en (German ticket, English precedents). Outputs in `eval/runs/probes/`.
   - Before fixes (`german-probe-v2`, prompt v1): checks pass en-en 8/9, de-de 9/10, de-en 7/9 (drafts that returned). Failures: one de-en reply fully in English; one de-en reply with "oe/ae/ue" instead of umlauts (not caught); "We have unlocked it" / "Wir haben es entsperrt" past-action claims; refund-trap deferrals failed `no_citations`.

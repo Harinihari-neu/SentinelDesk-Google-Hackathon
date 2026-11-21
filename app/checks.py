@@ -3,7 +3,8 @@
 Rule: code only, zero model tokens, milliseconds, and every failure names its reason.
 Failure codes (the harness counts these by prefix):
   schema_invalid, llm_error:<kind>, no_citations, invalid_citation:<id>, unsupported_number:<n>,
-  unsupported_promise:<term>, language_mismatch:<lang>, german_transliteration, pii_in_reply
+  unsupported_promise:<term>, language_mismatch:<lang>, german_transliteration, pii_in_reply,
+  credential_request (reply asks for a password/PIN/key), unsupported_contact (link to a non-allow-listed domain)
 A pure deferral ("a specialist will follow up", no facts) needs no citation; see is_deferral().
 """
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from app.guard import credential_request, unsupported_links
 from app.schemas import CheckResult, Draft, Ticket
 from app.textproc import detect_language, mask_pii
 
@@ -66,6 +68,10 @@ def run_checks(draft: Draft, ticket: Ticket, precedents: list, llm_error: Option
         f.append("german_transliteration")
     if mask_pii(draft.reply)[1]:
         f.append("pii_in_reply")
+    if credential_request(draft.reply):
+        f.append("credential_request")
+    if unsupported_links(draft.reply):
+        f.append("unsupported_contact")
     return CheckResult(passed=not f, failures=sorted(set(f)))
 
 
