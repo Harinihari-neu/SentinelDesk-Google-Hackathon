@@ -117,7 +117,8 @@ def auto_draft_share(rows):
 
 @metric("llm_touch_share", "system", "Proves 'LLM last': lower = cheaper at scale", False)
 def llm_touch_share(rows):
-    return _rate(len(_drafts(rows)), len(rows))
+    from app.draft import REUSE_MODEL
+    return _rate(sum(r["result"].draft.model != REUSE_MODEL for r in _drafts(rows)), len(rows))
 
 
 # ---------- retrieval ----------
@@ -242,8 +243,10 @@ def tokens(rows):
 
 @metric("cost_per_1m_tickets_usd", "ops", "Model choice; scale story", False)
 def cost_1m(rows):
+    from app.draft import REUSE_MODEL
     from app.llm import PRICES
-    if any(r["result"].draft and r["result"].draft.model not in PRICES for r in rows):
+    if any(r["result"].draft and r["result"].draft.model not in PRICES and r["result"].draft.model != REUSE_MODEL
+           for r in rows):
         return None  # unknown price: report n/a rather than a fake $0
     c = _rate(sum(r["result"].llm_cost_usd for r in rows), len(rows))
     return None if c is None else c * 1e6

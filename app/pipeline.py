@@ -4,7 +4,8 @@
     result = run(subject, body)   # -> PipelineResult
 
 Uses teammates' app/triage.py and app/retrieval.py when present, stubs otherwise.
-Env: LLM_BACKEND, LLM_MODEL, LLM_FALLBACK_MODEL (optional step-6 retry), RAG_K (default 3).
+Env: LLM_BACKEND, LLM_MODEL, LLM_FALLBACK_MODEL (optional step-6 retry), RAG_K (default 3),
+DRAFTER ("llm" default, or "reuse": no-LLM baseline that sends the top precedent's answer).
 """
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ import uuid
 from typing import Optional
 
 from app.checks import is_deferral, run_checks
-from app.draft import draft as make_draft
+from app.draft import draft as make_draft, reuse_draft
 from app.gate import decide
 from app.schemas import PipelineResult, Ticket
 from app.textproc import detect_language, mask_pii
@@ -34,9 +35,14 @@ except ImportError:
 
 
 def run_ticket(ticket: Ticket, k: Optional[int] = None, model: Optional[str] = None,
-               backend: Optional[str] = None, precedents: Optional[list] = None) -> PipelineResult:
-    """precedents: use these instead of calling retrieval (eval only: adversarial cases bring their own evidence)."""
+               backend: Optional[str] = None, precedents: Optional[list] = None,
+               drafter: Optional[str] = None) -> PipelineResult:
+    """precedents: use these instead of calling retrieval (eval only: adversarial cases bring their own evidence).
+    drafter: "llm" (default) or "reuse" (no-LLM baseline)."""
     k = k or int(os.getenv("RAG_K", "3"))
+    drafter = drafter or os.getenv("DRAFTER", "llm")
+    if drafter not in ("llm", "reuse"):
+        raise ValueError(f"unknown drafter {drafter!r}: use 'llm' or 'reuse'")
     t = {}
     t0 = time.perf_counter()
 
@@ -58,12 +64,15 @@ def run_ticket(ticket: Ticket, k: Optional[int] = None, model: Optional[str] = N
     if not gate.escalate:
         masked = ticket.model_copy(update={"subject": mask_pii(ticket.subject or "")[0] or None,
                                            "body": mask_pii(ticket.body)[0]})
-        draft, call = make_draft(masked, prec, model=model, backend=backend)
+        if drafter == "reuse":
+            draft, call = reuse_draft(masked, prec)
+        else:
+            draft, call = make_draft(masked, prec, model=model, backend=backend)
         checks = run_checks(draft, ticket, prec, llm_error=call.error)
         tokens, cost = call.in_tokens + call.out_tokens, call.cost_usd
         fb = os.getenv("LLM_FALLBACK_MODEL")
         # step 6: one retry on a larger model when checks fail (not on auth/config errors: they fail everywhere)
-        if not checks.passed and fb and call.error_kind not in ("auth", "config"):
+        if drafter == "llm" and not checks.passed and fb and call.error_kind not in ("auth", "config"):
             draft, call = make_draft(masked, prec, model=fb, backend=backend)
             checks = run_checks(draft, ticket, prec, llm_error=call.error)
             tokens += call.in_tokens + call.out_tokens
