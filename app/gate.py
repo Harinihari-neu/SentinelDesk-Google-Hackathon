@@ -6,6 +6,7 @@ retrieval similarity and code rules.
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -33,6 +34,10 @@ def load_config() -> dict:
         user = json.loads(CONFIG_PATH.read_text())
         cfg["min_confidence"].update(user.get("min_confidence", {}))
         cfg["min_similarity"] = user.get("min_similarity", cfg["min_similarity"])
+    # Manual-testing / demo override. Hand-typed tickets score ~0.86-0.93 against this synthetic KB (live check,
+    # 2026-11-21), below the 0.95 measured on KB-dev, so with the default nearly everything typed by hand escalates.
+    if os.getenv("GATE_MIN_SIMILARITY"):
+        cfg["min_similarity"] = float(os.environ["GATE_MIN_SIMILARITY"])
     return cfg
 
 

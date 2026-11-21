@@ -127,6 +127,16 @@ def test_pipeline_escalates_when_embedding_api_is_down():
     assert "retrieval_error:ConnectionError" in r.gate.reasons and "no_close_precedent" in r.gate.reasons
 
 
+def test_gate_min_similarity_env_override():
+    from app.gate import load_config
+    os.environ["GATE_MIN_SIMILARITY"] = "0.85"
+    try:
+        assert load_config()["min_similarity"] == 0.85
+    finally:
+        del os.environ["GATE_MIN_SIMILARITY"]
+    assert load_config()["min_similarity"] == 0.95
+
+
 def test_deferral_needs_no_citation():
     t = Ticket(ticket_id="X", body="Wir wollen eine Rückerstattung", language="de")
     for reply, lang in [("A specialist will follow up.", "en"), ("Ein Spezialist wird sich bei Ihnen melden.", "de")]:
