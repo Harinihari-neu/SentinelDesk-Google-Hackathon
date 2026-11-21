@@ -1,7 +1,7 @@
 # AI Engineering: Action Plan and Handoff
 
 **Scope of this workstream:** LLM layer, pipeline, gate logic, deterministic checks, eval harness and Trust Report.
-**Read first:** `docs/PLAN.md` (why), `docs/CONTRACTS.md` (interfaces), `app/schemas.py` (data shapes).
+**Read first:** `docs/PLAN.md` (why), `docs/CONTRACTS.md` (interfaces), `app/schemas.py` (data shapes). What was done and measured, per session: `docs/SESSION_LOG.md`.
 **Anyone picking this up** (person or agent): read the "State" and "Next tasks" sections, run the two commands in "How to run", then take the first unchecked task.
 
 ---
