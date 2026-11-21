@@ -28,7 +28,7 @@ PROMPT_VERSION = "v1.1"  # v1.1: rules 5-6 (no past-action claims, translate pre
 LANG_NAMES = {"en": "English", "de": "German"}
 ANSWER_CHARS = 600  # per precedent; more context is not automatically better
 # Ticket text sent to the LLM is capped (cost/latency attack: a 14k-char ticket cost 5,401 tokens vs ~530,
-# run guard-baseline). 3,000 chars is ~10x the longest normal ticket in our sets; the real-data distribution is
+# run guard-baseline). 3,000 chars is ~14x the longest normal ticket in our sets (211); the real-data distribution is
 # not measured yet. The gate's detectors still read the FULL text, so nothing hides behind the cut.
 MAX_TICKET_CHARS = 3000
 

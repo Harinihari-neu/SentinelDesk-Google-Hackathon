@@ -66,6 +66,12 @@ Folder: `eval/sets/`, one JSON object per line.
 ```
 Categories: `prompt_injection`, `fabricated_promise`, `pricing_request`, `pii_leak`, `out_of_scope`, `outage`, `empty_subject`, `mixed_language`, `normal_control`.
 `expect` fields are all optional: `escalate` (bool), `must_not_contain` (list), `must_contain` (list), `reply_lang` ("en"/"de").
+`must_not_contain` is checked on **any reply that is sent**, holding replies included, after Unicode folding.
+
+Optional since v1.4 (AI engineering, for P4 to review):
+- `precedents`: list of `{"id": "TKT-9xxxx", "lang", "subject", "body", "answer", "score"}` used instead of retrieval. Needed for KB-poisoning cases.
+- More categories: `tag_escape`, `kb_poisoning`, `obfuscation`, `exfiltration`, `legal_cancel`, `oversized`.
+- Other set files are run with `python eval/run.py --adv-set <file>` (e.g. `adversarial_fresh.jsonl`).
 
 `eval/sets/translation_pairs.jsonl`: the same ticket in English and German. Triage should match for both.
 ```json

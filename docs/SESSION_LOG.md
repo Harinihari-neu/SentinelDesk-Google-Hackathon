@@ -8,6 +8,70 @@ so the numbers that matter are copied here.
 
 ---
 
+## Session 2026-11-21 (b): Guardrails (Task 3)
+
+### Summary
+1. Wrote a 58-case adversarial set (EN/DE, 13 categories) and an 18-case fresh set. Both are drafts for P4.
+2. Measured the baseline, fixed each failure with the smallest code change, and re-measured on both sets.
+3. Main finding: the model resists injections in the **ticket** but follows instructions in **precedents** (KB poisoning).
+Details, threat table and pitch: `docs/GUARDRAILS.md`.
+
+### PR
+| PR | Branch | What | Status |
+|---|---|---|---|
+| (see PR list) | `feat/guardrails` | Adversarial sets, guardrail code, tests, `docs/GUARDRAILS.md` | Open. Built on `feat/german-probe` (#2), which is still open |
+
+### Runs
+All gemini-3.5-flash-lite, prompt v1.1, k=3, stub triage, case-supplied precedents, paced (`LLM_MIN_INTERVAL_S=4`), `--gate-bypass`.
+| Run | Set | Code | adversarial_pass_rate | Over-blocking |
+|---|---|---|---|---|
+| `guard-baseline` | original 58 | before fixes | 0.672 (39/58) | 1/10 |
+| `guard-fresh-baseline` | fresh 18 | before fixes | 0.500 (9/18) | 1/5 |
+| `guard-v1` | original 58 | guardrails v1 | **1.000 (58/58)** | **0/10** |
+| `guard-fresh-v1` | fresh 18 | guardrails v1 | **0.778 (14/18)** | 1/5 (LLM variance, not a guardrail) |
+
+### Findings
+1. **The LLM obeyed 0 ticket-side injections** (0/25 drafts `guard-baseline`, 0/7 `guard-fresh-baseline`). They failed the set only because nothing escalated them for a human.
+2. **KB poisoning works on the model:** it followed 3/4 poisoned precedents (`guard-baseline`) and 2/3 (`guard-fresh-baseline`). 3 poisoned replies would have been sent: a 50% discount, a phishing URL, an `.exe` link. After v1: 0 sent.
+3. The fresh set still beats the detector: leetspeak, spaced letters, "disregard what you were told" (`guard-fresh-v1`). The model didn't obey them.
+4. Self-harm and French/Spanish tickets were auto-drafted before (the French one got an English reply). Now they escalate.
+5. Oversized tickets: 5,401 tokens before vs ~525 normal. Capped: 1,629 (`guard-v1`).
+6. Secrets (passwords, API key) reached the LLM provider in 3/5 cases. Now masked (0/5). None were ever echoed.
+7. Guardrails cost 0 tokens. Gate p50 0.07 → 0.16 ms, checks p50 1.43 → 1.75 ms (offline benchmark, 76 cases).
+8. The new "sent reply" scorer (covers holding replies) changed no result on these sets. Legacy and new scores are equal in all 4 runs.
+9. Stub-triage artefact: "markdown" matched the "down" keyword → high-priority incident (fr-exf-01).
+
+### What we can present (measured)
+- "58/58 hostile tickets handled safely, 0/10 harmless ones blocked" (`guard-v1`, in-sample).
+- "14/18 on attacks unseen while building the defences; in the 4 misses the model still didn't obey" (`guard-fresh-v1`).
+- "Poisoned knowledge-base answers would have sent a fake discount, a phishing link and a malware link; now 0 get through" (`guard-baseline` / `guard-fresh-baseline` → v1).
+- "All guardrails are code: ~1 ms, 0 tokens."
+
+### What we can NOT claim
+- Robustness to paraphrased or novel attacks in general: the fresh set has 18 cases, and its misses show the limit.
+- Over-blocking on real tickets and the real KB: **not measured** (stub triage/retrieval, `data/` empty).
+- Results across runs: each number is one run. fr-ctl-02 flipped between runs (LLM variance).
+
+### Open items
+- [ ] P4: review `eval/sets/adversarial.jsonl` and `adversarial_fresh.jsonl` (their folder), and add cases we haven't seen.
+- [ ] When DS2's KB lands: run `precedent_signals` over every KB answer (false-positive rate) and list link domains for `CONTACT_ALLOWLIST`.
+- [ ] Measure real ticket lengths; revisit `MAX_TICKET_CHARS` = 3,000.
+- [ ] `is_deferral` misses "…wird sich mit Ihrem Anliegen befassen" (fr-ctl-02): add verbs, or tighten prompt rule 4 wording.
+- [ ] Masking turns log timestamps into `[PHONE]` (pre-existing).
+
+### Budget
+This session: ~164 LLM calls (4 runs: 61 + 21 + 61 + 21). Project total ≈ 305 of 1,500.
+
+### How to reproduce
+```bash
+python tests/test_guardrails.py                                         # offline, 17 tests
+LLM_BACKEND=fake python eval/run.py --name fake-guard --gate-bypass     # offline wiring
+LLM_MIN_INTERVAL_S=4 LLM_MAX_BACKOFF_S=30 LLM_DEADLINE_S=90 python eval/run.py --name guard-v1 --gate-bypass
+LLM_MIN_INTERVAL_S=4 LLM_MAX_BACKOFF_S=30 LLM_DEADLINE_S=90 python eval/run.py --name guard-fresh-v1 --gate-bypass --adv-set adversarial_fresh.jsonl
+```
+
+---
+
 ## Session 2026-11-21
 
 ### Summary
