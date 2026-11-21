@@ -21,8 +21,10 @@ RISKY_ASKS = ["refund", "reimburse", "compensation", "credit", "discount", "guar
               "pricing", "contract", "legal", "lawyer", "lawsuit", "cancel", "delete my",
               "rückerstattung", "erstattung", "entschädigung", "gutschrift", "rabatt", "garantie",
               "preis", "vertrag", "anwalt", "kündig"]
-# Prefix match on the term, with exceptions where the prefix also starts a harmless phrase (case adv-ctl-05).
-_RISKY_RX = {t: re.compile(rf"\b{re.escape(t)}" + (r"(?!\s*cards?\b)" if t == "credit" else "")) for t in RISKY_ASKS}
+# Prefix match on the term, with exceptions where the prefix also starts a harmless word:
+# "credit card" (adv-ctl-05); "Slack" (22 of 27 `sla` hits) and "preisgeben" = disclose (holdout, guard-realdata-v0).
+_EXCEPT = {"credit": r"(?!\s*cards?\b)", "sla": r"(?!ck)", "preis": r"(?!ge?geben|zugeben|gabe)"}
+_RISKY_RX = {t: re.compile(rf"\b{re.escape(t)}" + _EXCEPT.get(t, "")) for t in RISKY_ASKS}
 
 
 def load_config() -> dict:

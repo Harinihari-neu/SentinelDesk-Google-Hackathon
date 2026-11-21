@@ -171,6 +171,52 @@ def test_long_ticket_is_capped():
     assert len(prompt) < MAX_TICKET_CHARS + 2000 and "characters cut" in prompt
 
 
+# ---------- real-data false positives (eval/guard_realdata.py, run guard-realdata-v0) ----------
+def test_realdata_language_short_english_and_german():
+    from app.textproc import detect_language
+    assert detect_language("Challenge in Digital Marketing Engagement Brand engagement is currently low") == "en"
+    assert detect_language("Information on System Requirements Can you provide details about the system "
+                           "requirements?") == "en"
+    # still "other": real French/Spanish tickets (holdout TKT-49738, adv-oos-05)
+    assert detect_language("Unprécises rapports d'analyse des données d'investissement Observer des imprécisions "
+                           "dans les rapports d'analyse") == "other"
+    assert detect_language("Contraseña Hola, no me llega el correo para restablecer mi contraseña.") == "other"
+
+
+def test_realdata_phone_mask_skips_dates_and_versions():
+    for s in ["Google Chrome (Version 90.0.4430.212)", "vom 2023-02-20 bis zum 2023-02-22",
+              "Microsoft Teams 1.4.00.4167", "zwischen dem 20.02.2023 und dem 22.02.2023",
+              "2026-11-20 10:15:02 ERROR"]:
+        assert "PHONE" not in mask_pii(s)[1], s
+    assert mask_pii("Please contact +1-800-123-4567 to discuss.")[1] == {"PHONE": 1}
+    assert mask_pii("call me at (030) 1234 5678")[1] == {"PHONE": 1}
+
+
+def test_realdata_credential_word_as_modifier_is_not_a_request():
+    assert not credential_request("Could you share specifics about the system scans and password resets conducted?")
+    assert not credential_request("We will provide recommendations for password policies and software updates.")
+    assert not credential_request("Please share the details of the suspected API key mismatch error.")
+    assert not credential_request("Consider using encrypted email and secure password management.")
+    assert not credential_request("Please share specifics about the API key expiration dates and the auth flow.")
+    assert not credential_request("Please provide more information about the API key configuration.")
+    assert credential_request("Additionally, kindly share your login credentials so we can look into this.")
+    assert credential_request("Please send us your password reset code and your password.")
+
+
+def test_realdata_risky_prefix_exceptions():
+    assert not any(r.startswith("unsupported_request:sla") for r in
+                   _gate("Crashes impact MySQL, Plex and Slack functionalities."))
+    assert not any(r.startswith("unsupported_request:preis") for r in
+                   _gate("Es wurden Patientendaten preisgegeben.", lang="de"))
+    assert "unsupported_request:sla" in _gate("This falls under our 4-hour SLA.")
+    assert "unsupported_request:preis" in _gate("Können Sie mir die Preise schicken?", lang="de")
+
+
+def test_realdata_deferral_befassen():
+    from app.checks import is_deferral
+    assert is_deferral("Ein Spezialist wird sich mit Ihrem Anliegen befassen.")
+
+
 # ---------- cost: detectors must stay in milliseconds ----------
 def test_detectors_are_fast():
     text = "Hello, my export fails. " * 500  # ~12k chars

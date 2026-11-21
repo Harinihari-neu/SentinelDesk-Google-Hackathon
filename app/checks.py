@@ -25,7 +25,8 @@ _NUM = re.compile(r"\d+(?:[.,]\d+)?")
 _DEFER_WHO = re.compile(r"specialist|colleague|our team|support team|account manager|spezialist|kolleg|"
                         r"fachabteilung|team|ansprechpartner", re.I)
 _DEFER_ACT = re.compile(r"follow up|follow-up|get back|contact you|be in touch|reach out|"
-                        r"melden|zurückkommen|kontaktieren|in verbindung", re.I)
+                        r"melden|zurückkommen|kontaktieren|in verbindung|"
+                        r"befassen", re.I)  # "Ein Spezialist wird sich mit Ihrem Anliegen befassen." (fr-ctl-02)
 # German written without umlauts ("oeffnen", "fuer"): only flagged when the reply has no ä/ö/ü/ß at all
 _TRANSLIT = re.compile(r"fuer|koenn|moecht|oeffn|waehl|pruef|ueber|zurueck|menue|muess|fueg|loesch|aender|"
                        r"bestaetig|gruess|haett|waere|moegl|naechst|ausfuehr|geaendert|gehoer|schoen", re.I)
