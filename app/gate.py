@@ -9,7 +9,9 @@ import json
 import re
 from pathlib import Path
 
+from app.guard import injection_signals, precedent_signals, sensitive_signals
 from app.schemas import GateDecision, Ticket, TriageResult
+from app.textproc import fold
 
 CONFIG_PATH = Path(__file__).parent / "config" / "gate.json"
 DEFAULTS = {"min_confidence": {"type": 0.5, "queue": 0.4, "priority": 0.5}, "min_similarity": 0.5}
@@ -19,6 +21,8 @@ RISKY_ASKS = ["refund", "reimburse", "compensation", "credit", "discount", "guar
               "pricing", "contract", "legal", "lawyer", "lawsuit", "cancel", "delete my",
               "rückerstattung", "erstattung", "entschädigung", "gutschrift", "rabatt", "garantie",
               "preis", "vertrag", "anwalt", "kündig"]
+# Prefix match on the term, with exceptions where the prefix also starts a harmless phrase (case adv-ctl-05).
+_RISKY_RX = {t: re.compile(rf"\b{re.escape(t)}" + (r"(?!\s*cards?\b)" if t == "credit" else "")) for t in RISKY_ASKS}
 
 
 def load_config() -> dict:
@@ -41,9 +45,22 @@ def decide(ticket: Ticket, triage: TriageResult, precedents: list, cfg=None) -> 
     top = precedents[0].score if precedents else 0.0
     if top < cfg["min_similarity"]:
         reasons.append("no_close_precedent")
-    text = f"{ticket.subject or ''} {ticket.body}".lower()
+    raw = f"{ticket.subject or ''} {ticket.body}"
+    text = fold(raw).lower()
     evidence = " ".join(p.answer.lower() for p in precedents)
-    for term in RISKY_ASKS:
-        if re.search(rf"\b{re.escape(term)}", text) and term not in evidence:
+    for term, rx in _RISKY_RX.items():
+        if rx.search(text) and term not in evidence:
             reasons.append(f"unsupported_request:{term}")
+    # guardrails (app/guard.py): code patterns, logged by name
+    inj = injection_signals(raw)
+    if inj:
+        reasons.append("possible_injection:" + "+".join(inj))
+    if sensitive_signals(raw):
+        reasons.append("sensitive_content")
+    if ticket.language == "other":
+        reasons.append("unsupported_language")
+    for p in precedents:
+        sig = precedent_signals(f"{p.subject or ''} {p.body} {p.answer}")
+        if sig:
+            reasons.append(f"suspicious_precedent:{p.ticket_id}:" + "+".join(sig))
     return GateDecision(escalate=bool(reasons), reasons=reasons)
