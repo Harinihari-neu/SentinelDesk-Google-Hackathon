@@ -13,10 +13,13 @@ Goal: the smallest system that clears the bar, with every component justified by
 - After feature freeze: fixes only.
 
 ## Owners
-| Folder | Owner |
-|---|---|
-| `app/` | |
-| `ui/` | |
-| `data/` | |
-| `eval/` | |
-| `docs/`, README | |
+Interfaces every owner must follow: [docs/CONTRACTS.md](docs/CONTRACTS.md). Data shapes: `app/schemas.py`.
+
+| Area | Files | Owner |
+|---|---|---|
+| Pipeline, LLM, checks, gate, contracts | `app/schemas.py`, `app/llm.py`, `app/draft.py`, `app/checks.py`, `app/gate.py`, `app/pipeline.py` | AI engineering |
+| Eval harness, Trust Report | `eval/run.py`, `eval/metrics/`, `eval/reports/` | AI engineering |
+| Triage + gate thresholds | `app/triage.py`, `app/config/gate.json` | DS1 |
+| Split, data notes, retrieval | `data/`, `docs/DATA_NOTES.md`, `app/retrieval.py` | DS2 |
+| Test sets, QA | `eval/sets/` | P4 |
+| Console, pitch, README | `ui/`, `README.md`, `pitch/` | P5 |
