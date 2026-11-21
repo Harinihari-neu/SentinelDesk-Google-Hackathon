@@ -10,3 +10,5 @@ data/*.parquet
 *.faiss
 *.index
 .ipynb_checkpoints/
+eval/runs/
+eval/reports/
