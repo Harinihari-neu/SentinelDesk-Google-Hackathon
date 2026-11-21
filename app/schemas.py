@@ -73,3 +73,4 @@ class PipelineResult(BaseModel):
     timings_ms: dict[str, float]        # step name -> latency, plus "total"
     llm_tokens: int = 0
     llm_cost_usd: float = 0.0
+    
