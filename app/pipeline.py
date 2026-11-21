@@ -16,18 +16,23 @@ from typing import Optional
 
 from app.checks import is_deferral, run_checks
 from app.draft import draft as make_draft, reuse_draft
-from app.gate import decide
+from app.gate import decide, load_config
 from app.schemas import PipelineResult, Ticket
 from app.textproc import detect_language, mask_pii
 
+# Real components need local assets (gitignored): models/triage/<version>/ and data/emb/gemini/. Missing -> stubs.
 try:
-    from app.triage import triage as _triage
+    from app.triage import MODELS, _version, triage as _triage
+    if not (MODELS / _version() / "model.joblib").exists():
+        raise ImportError(f"no triage model at {MODELS / _version()}")
     TRIAGE_SOURCE = "app.triage"
 except ImportError:
     from app.stubs import triage as _triage
     TRIAGE_SOURCE = "stub"
 try:
-    from app.retrieval import retrieve as _retrieve
+    from app.retrieval import EMB_DIR, retrieve as _retrieve
+    if not (EMB_DIR / "core_kb_emb.npy").exists():
+        raise ImportError(f"no embeddings at {EMB_DIR}")
     RETRIEVAL_SOURCE = "app.retrieval"
 except ImportError:
     from app.stubs import retrieve as _retrieve
@@ -36,9 +41,10 @@ except ImportError:
 
 def run_ticket(ticket: Ticket, k: Optional[int] = None, model: Optional[str] = None,
                backend: Optional[str] = None, precedents: Optional[list] = None,
-               drafter: Optional[str] = None) -> PipelineResult:
+               drafter: Optional[str] = None, min_similarity: Optional[float] = None) -> PipelineResult:
     """precedents: use these instead of calling retrieval (eval only: adversarial cases bring their own evidence).
-    drafter: "llm" (default) or "reuse" (no-LLM baseline)."""
+    drafter: "llm" (default) or "reuse" (no-LLM baseline).
+    min_similarity: override the gate's cutoff (eval only: hand-written precedent scores use another scale)."""
     k = k or int(os.getenv("RAG_K", "3"))
     drafter = drafter or os.getenv("DRAFTER", "llm")
     if drafter not in ("llm", "reuse"):
@@ -52,18 +58,29 @@ def run_ticket(ticket: Ticket, k: Optional[int] = None, model: Optional[str] = N
 
     s = t0
     ticket = ticket.model_copy(update={"language": detect_language(f"{ticket.subject or ''} {ticket.body}")})
+    # Masked BEFORE triage and retrieval: their text goes to the embedding API. The gate reads the raw ticket.
+    masked = ticket.model_copy(update={"subject": mask_pii(ticket.subject or "")[0] or None,
+                                       "body": mask_pii(ticket.body)[0]})
     s = lap("preprocess", s)
-    tri = _triage(ticket)
+    tri = _triage(masked)
     s = lap("triage", s)
-    prec = precedents[:k] if precedents is not None else _retrieve(ticket, k=k)
+    retrieval_error = None
+    try:
+        prec = precedents[:k] if precedents is not None else _retrieve(masked, k=k)
+    except Exception as e:  # embedding API down: no evidence -> the gate escalates; never crash
+        prec, retrieval_error = [], type(e).__name__
     s = lap("retrieval", s)
-    gate = decide(ticket, tri, prec)
+    cfg = load_config()
+    if min_similarity is not None:
+        cfg["min_similarity"] = min_similarity
+    gate = decide(ticket, tri, prec, cfg)
+    if retrieval_error:
+        gate.reasons.append(f"retrieval_error:{retrieval_error}")
+        gate.escalate = True
     s = lap("gate", s)
 
     draft, checks, tokens, cost, status = None, None, 0, 0.0, "escalated"
     if not gate.escalate:
-        masked = ticket.model_copy(update={"subject": mask_pii(ticket.subject or "")[0] or None,
-                                           "body": mask_pii(ticket.body)[0]})
         if drafter == "reuse":
             draft, call = reuse_draft(masked, prec)
         else:

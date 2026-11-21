@@ -102,11 +102,29 @@ def test_retry_after_is_parsed():
 def test_pipeline_never_crashes_on_outage():
     os.environ.update(FAST | {"LLM_FAKE_ERRORS": "503"})
     llm._fake_i = 0
-    from app import pipeline
-    r = pipeline.run("Password reset email", "I forgot my password and the reset email never arrives. Can you help?")
+    from app import pipeline, stubs
+    real, pipeline._retrieve = pipeline._retrieve, stubs.retrieve  # stay offline: no embedding call
+    try:
+        r = pipeline.run("Password reset email", "I forgot my password and the reset email never arrives. Can you help?")
+    finally:
+        pipeline._retrieve = real
     assert r.status == "escalated"
     if r.checks:  # drafted: the outage shows as the reason
         assert r.checks.failures == ["llm_error:unavailable"]
+
+
+def test_pipeline_escalates_when_embedding_api_is_down():
+    from app import pipeline
+
+    def down(ticket, k=5, queue=None):
+        raise ConnectionError("embedding API unreachable")
+    real, pipeline._retrieve = pipeline._retrieve, down
+    try:
+        r = pipeline.run("VPN", "The VPN drops every few minutes.")
+    finally:
+        pipeline._retrieve = real
+    assert r.status == "escalated" and r.draft is None
+    assert "retrieval_error:ConnectionError" in r.gate.reasons and "no_close_precedent" in r.gate.reasons
 
 
 def test_deferral_needs_no_citation():

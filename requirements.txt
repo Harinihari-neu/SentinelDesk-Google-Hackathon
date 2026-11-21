@@ -5,3 +5,6 @@ datasets
 google-genai
 langdetect
 streamlit>=1.36
+numpy
+scikit-learn==1.9.1   # DS1 triage models were pickled with 1.9.1; other versions warn and may mis-predict
+joblib
