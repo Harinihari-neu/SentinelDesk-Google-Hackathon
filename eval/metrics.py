@@ -63,7 +63,7 @@ def _has_failure(r, prefix):
 # ---------- triage ----------
 for _head in ("type", "queue", "priority"):
     def _f(rows, h=_head):
-        L = _labeled(rows)
+        L = [r for r in _labeled(rows) if r["label"].get(h)]  # untyped batch has no type/queue label
         return macro_f1([r["label"][h] for r in L], [getattr(r["result"].triage, h).label for r in L])
     metric(f"macro_f1_{_head}", "triage", f"Which {_head} classifier rung we keep")(_f)
 
@@ -98,7 +98,7 @@ def ece_priority(rows, bins=10):
 def queue_f1_gap(rows):
     by = {}
     for lang in ("en", "de"):
-        L = [r for r in _labeled(rows) if r["label"].get("language") == lang]
+        L = [r for r in _labeled(rows) if r["label"].get("language") == lang and r["label"].get("queue")]
         by[lang] = macro_f1([r["label"]["queue"] for r in L], [r["result"].triage.queue.label for r in L])
     return None if None in by.values() else abs(by["en"] - by["de"])
 
@@ -130,7 +130,7 @@ def top1_sim(rows):
 @metric("topk_queue_agreement", "retrieval", "Is queue filtering / reranking worth it?")
 def topk_queue_agreement(rows):
     L = _labeled(rows)
-    pairs = [(p.queue, r["label"]["queue"]) for r in L for p in r["result"].precedents if p.queue]
+    pairs = [(p.queue, r["label"]["queue"]) for r in L for p in r["result"].precedents if p.queue and r["label"].get("queue")]
     return _rate(sum(a == b for a, b in pairs), len(pairs))
 
 
