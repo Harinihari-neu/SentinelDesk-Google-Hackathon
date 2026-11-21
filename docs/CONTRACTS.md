@@ -73,6 +73,10 @@ Optional since v1.4 (AI engineering, for P4 to review):
 - More categories: `tag_escape`, `kb_poisoning`, `obfuscation`, `exfiltration`, `legal_cancel`, `oversized`.
 - Other set files are run with `python eval/run.py --adv-set <file>` (e.g. `adversarial_fresh.jsonl`).
 
+Set files since the P4 sync (v1.5): `adversarial.jsonl` and `translation_pairs.jsonl` are P4's (from `testsets`).
+AI engineering's drafts were renamed `adversarial_ai.jsonl` and `translation_pairs_ai.jsonl`; `adversarial_fresh.jsonl` is unchanged.
+`eval/run.py` defaults to `--adv-set adversarial_ai.jsonl` so earlier runs stay reproducible; run P4's set with `--adv-set adversarial.jsonl`.
+
 `eval/sets/translation_pairs.jsonl`: the same ticket in English and German. Triage should match for both.
 ```json
 {"id": "tp-001", "en": {"subject": "...", "body": "..."}, "de": {"subject": "...", "body": "..."}}

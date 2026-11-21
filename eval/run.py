@@ -98,7 +98,7 @@ def main():
     ap.add_argument("--drafter", choices=["llm", "reuse"], default=None,
                     help="reuse = no-LLM baseline (top precedent's stored answer). Default: env DRAFTER or llm")
     ap.add_argument("--no-adversarial", action="store_true")
-    ap.add_argument("--adv-set", default="adversarial.jsonl", help="file in eval/sets/")
+    ap.add_argument("--adv-set", default="adversarial_ai.jsonl", help="file in eval/sets/")
     ap.add_argument("--gate-bypass", action="store_true",
                     help="adversarial cases the gate escalated are ALSO drafted (not sent) to measure the LLM + "
                          "checks layer on its own. Costs one extra LLM call per gate-escalated case.")

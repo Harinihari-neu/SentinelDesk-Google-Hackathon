@@ -8,6 +8,27 @@ so the numbers that matter are copied here.
 
 ---
 
+## Session 2026-11-21 (c): Branch cleanup and P4 test-set sync
+
+### Summary
+1. Deleted 6 finished branches, local and remote: `chore/py312-smoke`, `feat/german-probe`, `feat/guardrails`, `feat/reuse-baseline`, `feat/eval-holdout-slices`, `feat/reuse-baseline-eval`. PRs #1, #2, #4, #6 merged; #3, #5 closed and their content landed in #4/#6 (checked with `git cherry` and `git diff`).
+2. Removed worktrees `SentinelDesk-wt-ai` and `SentinelDesk-wt-eval`. The PR #6 report from wt-eval was kept locally in `eval/reports/archive/` (gitignored).
+3. Merged P4's `testsets` into `chore/sync-testsets`. Two files clashed; P4 keeps the names, ours were renamed (table below).
+
+| File | Owner | Cases |
+|---|---|---|
+| `eval/sets/adversarial.jsonl` | P4 | 30 (no `precedents`) |
+| `eval/sets/adversarial_ai.jsonl` | AI eng (was `adversarial.jsonl`) | 58 |
+| `eval/sets/adversarial_fresh.jsonl` | AI eng | 18 |
+| `eval/sets/translation_pairs.jsonl` | P4 | 8 |
+| `eval/sets/translation_pairs_ai.jsonl` | AI eng (was `translation_pairs.jsonl`) | 10 |
+| `eval/sets/outage_burst.jsonl` | P4 | 4 |
+
+LLM calls this session: 0. Tests: see PR.
+
+### Next
+- [ ] Task B: run P4's set once as `guard-p4` (`--adv-set adversarial.jsonl`, ≤30 calls).
+
 ## Session 2026-11-21 (b): Guardrails (Task 3)
 
 ### Summary
