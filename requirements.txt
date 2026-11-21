@@ -4,3 +4,4 @@ pyarrow
 datasets
 google-genai
 langdetect
+streamlit>=1.36
