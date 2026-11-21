@@ -17,9 +17,12 @@ from pydantic import BaseModel, ValidationError
 
 # USD per 1M tokens (input, output). Fill in from Google's current pricing page before quoting cost.
 # A model missing here -> cost reported as n/a (never a fake $0). Gemini 2.5 is retired for new keys.
+# Source: https://aistudio.google.com/docs/pricing (ai.google.dev/gemini-api/docs/pricing redirects there),
+# accessed 2026-11-21. Standard (paid) tier, text input. Output price includes thinking tokens. Batch API = 50% off.
+# Not listed on that page: gemini-3.5-flash. Gemma 4: free tier only, no paid price (unverified) -> left out (n/a).
 PRICES: dict = {
-    # "gemini-3.5-flash-lite": (IN, OUT),   # TODO verify
-    # "gemini-3.5-flash": (IN, OUT),        # TODO verify; needs thinking capped (SDK on Python 3.10+)
+    "gemini-3.5-flash-lite": (0.30, 2.50),
+    "gemini-3.1-flash-lite": (0.25, 1.50),
 }
 
 
