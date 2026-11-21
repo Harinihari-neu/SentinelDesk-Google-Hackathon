@@ -86,10 +86,10 @@ Outputs:
 
 ### Phase 3: The improvement ladder (T+2:30 → T+4:00), one change per run
 7. **k:** `--k 3` vs `--k 5` (name runs `k3`, `k5`). Keep the smaller k unless `unsupported_claim_rate` or `citation_validity` clearly improves.
-8. **Model size:** `--model gemini-2.5-flash-lite` vs `--model gemini-2.5-flash`. Optional: `--backend ollama --model gemma3:4b` for the private/local story. Keep the smallest model that clears the bars: `unsupported_claim_rate ≤ 0.05`, `language_match_rate ≥ 0.95`, `schema_parse_rate = 1.0`.
+8. **Model size:** `--model gemini-3.5-flash-lite` vs `--model gemini-3.5-flash`. Optional: `--backend ollama --model gemma3:4b` for the private/local story. Keep the smallest model that clears the bars: `unsupported_claim_rate ≤ 0.05`, `language_match_rate ≥ 0.95`, `schema_parse_rate = 1.0`.
 9. **Gate:** after DS1 delivers `app/config/gate.json` from their curve, re-run. *Done when* `missed_critical_rate = 0` on the sample, and `auto_draft_share` is reported alongside it.
 10. **Adversarial set:** when P4 adds `eval/sets/adversarial.jsonl`, `adversarial_pass_rate` fills in automatically. For each failure, fix with the smallest change (a gate term, a check term or a prompt line), then re-run.
-11. **Step 6 (optional):** `LLM_FALLBACK_MODEL=gemini-2.5-flash`. Keep only if it raises `checks_pass_rate` at an acceptable cost per 1M tickets.
+11. **Step 6 (optional):** `LLM_FALLBACK_MODEL=gemini-3.5-flash`. Keep only if it raises `checks_pass_rate` at an acceptable cost per 1M tickets.
 
 ### Phase 4: Additions if time allows (T+3:30 → T+4:30)
 12. **Translation consistency metric:** read `eval/sets/translation_pairs.jsonl`, run both sides, report the share with identical triage labels. Add it as `@metric("translation_consistency", "robustness", "Trust across languages")`. Needs a small change in `run.py` to load pairs.
@@ -113,4 +113,5 @@ Outputs:
 - **Python 3.9** works, but Google's libraries print end-of-life warnings. Use 3.10+ on the demo machine.
 
 ## Change log
+- v1.1: Gemini key verified. Gemini 2.5 retired for new keys (404); default now `gemini-3.5-flash-lite` (0.7–1.3 s warm, first call ~10 s cold). `gemini-3.5-flash` burned its whole output cap on hidden thinking (66 s, empty output): don't use it until thinking can be capped (needs newer google-genai on Python 3.10+). Gemma 4 (`gemma-4-26b-a4b-it`) is available via the same key: candidate for the small-open-model rung. PRICES left empty until verified; cost metric shows n/a for unpriced models.
 - v1: llm gateway, pipeline, gate, checks, harness, smoke set, offline run verified.

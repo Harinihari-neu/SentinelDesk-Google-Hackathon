@@ -97,7 +97,7 @@ def main():
 
     config = {"name": a.name, "source": source, "n": len(main_rows), "n_adversarial": len(rows) - len(main_rows),
               "k": a.k or int(os.getenv("RAG_K", "3")), "backend": a.backend or os.getenv("LLM_BACKEND", "gemini"),
-              "model": a.model or os.getenv("LLM_MODEL", "gemini-2.5-flash-lite"),
+              "model": a.model or os.getenv("LLM_MODEL", "gemini-3.5-flash-lite"),
               "triage": pipeline.TRIAGE_SOURCE, "retrieval": pipeline.RETRIEVAL_SOURCE,
               "triage_version": rows[0]["result"].triage.model_version if rows else None,
               "time": time.strftime("%Y-%m-%d %H:%M:%S")}

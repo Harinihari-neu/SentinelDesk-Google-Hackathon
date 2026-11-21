@@ -14,10 +14,11 @@ from typing import Optional, Type
 
 from pydantic import BaseModel, ValidationError
 
-# USD per 1M tokens (input, output). VERIFY against current Google pricing before quoting in the pitch.
-PRICES = {
-    "gemini-2.5-flash-lite": (0.10, 0.40),
-    "gemini-2.5-flash": (0.30, 2.50),
+# USD per 1M tokens (input, output). Fill in from Google's current pricing page before quoting cost.
+# A model missing here -> cost reported as n/a (never a fake $0). Gemini 2.5 is retired for new keys.
+PRICES: dict = {
+    # "gemini-3.5-flash-lite": (IN, OUT),   # TODO verify
+    # "gemini-3.5-flash": (IN, OUT),        # TODO verify; needs thinking capped (SDK on Python 3.10+)
 }
 
 
@@ -43,7 +44,7 @@ def default_backend() -> str:
 
 
 def default_model() -> str:
-    return os.getenv("LLM_MODEL", "gemini-2.5-flash-lite")
+    return os.getenv("LLM_MODEL", "gemini-3.5-flash-lite")
 
 
 def generate_json(system: str, user: str, schema: Type[BaseModel], model: Optional[str] = None,
