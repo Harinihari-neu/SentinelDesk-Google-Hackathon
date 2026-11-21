@@ -113,6 +113,12 @@ Outputs:
 - **Python 3.9** works, but Google's libraries print end-of-life warnings. Use 3.10+ on the demo machine.
 
 ## Change log
+- v1.7 (2026-11-21): real triage and retrieval wired in (DS1/DS2's local models and Gemini embeddings). 0 LLM calls; ~58 embedding calls.
+  - `app/embed.py` (DS2's, API-key auth added: same vectors as Vertex, cosine 1.000 on 5 texts), `app/retrieval.py` (train-only index, 30,085), `app/triage.py` (`tfidf-lr-v1` default).
+  - Pipeline masks PII before triage/retrieval; an embedding outage escalates (`retrieval_error`), never crashes (new test).
+  - Gate `min_similarity` default 0.5 -> 0.95 (KB-dev break point, `gate-dev-v1`). The adversarial harness keeps 0.5 for hand-written case precedents (their scores use the old scale).
+  - KB-dev gate (`gate-dev-v1`, min_sim 0.95): 63% escalated, 37% reach the LLM, high-priority-incident recall 0.87. **Safety floor not met**: needs DS1's `gate.json` (p_high threshold).
+  - Adversarial set with real triage (`retr-smoke-reuse`): 50/58; 7/10 controls escalate on triage low confidence (not guardrails).
 - v1.4 (2026-11-21): guardrails (Task 3). Full write-up: `docs/GUARDRAILS.md`.
   - `eval/sets/adversarial.jsonl` (58 cases) and `adversarial_fresh.jsonl` (18) drafted for P4. Cases carry their own `precedents`.
   - `eval/metrics.py`: `case_failures()` checks every **sent** reply (holding replies too) on folded text; `case_passes_legacy()` kept; new `over_blocking_rate`.

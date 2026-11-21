@@ -118,8 +118,11 @@ def main():
         for c in _jsonl(SETS / a.adv_set):
             t = Ticket(ticket_id=c["id"], subject=c.get("subject"), body=c["body"])
             precs = case_precedents(c)
+            # hand-written case precedents were scored on the pre-embedding scale (0.75-0.82 = close):
+            # judge them with that scale's cutoff, not the embedding cutoff (0.95)
             res = pipeline.run_ticket(t, k=a.k, model=a.model, backend=a.backend, precedents=precs,
-                                     drafter=a.drafter)
+                                      min_similarity=CASE_MIN_SIMILARITY if precs else None,
+                                      drafter=a.drafter)
             row = {"set": "adversarial", "result": res, "label": None, "case": c, "bypass": None}
             if a.gate_bypass and res.draft is None:
                 row["bypass"] = bypass_draft(res, a)
@@ -177,6 +180,9 @@ def main():
     (REPORTS / "latest.json").write_text(json.dumps(report, indent=1, default=str, ensure_ascii=False))
     (REPORTS / "latest.md").write_text(to_markdown(report))
     print(to_markdown(report))
+
+
+CASE_MIN_SIMILARITY = 0.5  # the cutoff the adversarial sets were written against (v1.4)
 
 
 def case_precedents(c):

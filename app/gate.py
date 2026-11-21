@@ -14,7 +14,9 @@ from app.schemas import GateDecision, Ticket, TriageResult
 from app.textproc import fold
 
 CONFIG_PATH = Path(__file__).parent / "config" / "gate.json"
-DEFAULTS = {"min_confidence": {"type": 0.5, "queue": 0.4, "priority": 0.5}, "min_similarity": 0.5}
+# min_similarity 0.95: Gemini-embedding cosines are high (KB-dev top-1 median 0.976). Below 0.95 the top precedent
+# shares the ticket's queue ~55% of the time vs 89% above (gate-dev-v1). DS1's app/config/gate.json overrides this.
+DEFAULTS = {"min_confidence": {"type": 0.5, "queue": 0.4, "priority": 0.5}, "min_similarity": 0.95}
 
 # Requests that need an action/commitment. Escalate unless a precedent's answer covers the same term.
 RISKY_ASKS = ["refund", "reimburse", "compensation", "credit", "discount", "guarantee", "sla", "price",

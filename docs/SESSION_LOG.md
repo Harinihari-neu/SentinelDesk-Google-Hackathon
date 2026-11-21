@@ -8,6 +8,32 @@ so the numbers that matter are copied here.
 
 ---
 
+## Session 2026-11-21 (e): Real triage + retrieval in the pipeline
+
+### What came in
+DS1/DS2's local folder (not in git): Gemini embeddings of all 33,449 core_kb rows (`gemini-embedding-001`, 768 dims, via Vertex),
+4 triage models (`tfidf-lr-v1`, `gemini-lr-c100`, `gemini-lr-c100-cw`, `gemini-lr-v2`), and their scripts (now in `data/`).
+
+### Decisions
+| Decision | Why (measured) |
+|---|---|
+| Index core_kb **train** rows only (30,085) | DS2's `split.py`: KB-dev is "used to fit calibration, gate thresholds and the similarity cutoff". Indexed, each dev ticket would find itself at 1.0 |
+| Triage default `tfidf-lr-v1` | Best KB-dev macro-F1 on every head (0.848 / 0.516 / 0.590 vs ≤ 0.818 / 0.373 / 0.452), no API call |
+| API-key embeddings for live queries | Same vectors as DS2's Vertex run: cosine 1.000 on 5 KB texts |
+| `min_similarity` 0.95 | KB-dev top-1 median 0.976. Below 0.95 the top precedent shares the queue ~55% vs 89% above (`gate-dev-v1`) |
+
+### Runs (0 LLM calls; ~58 embedding calls)
+| Run | Result |
+|---|---|
+| `gate-dev-v1` (KB-dev 3,357, offline) | min_sim 0.90 / 0.95 / 0.97 -> escalated 58% / 63% / 74%; HP-incident recall 0.82 / 0.87 / 0.94; drafted top-1 queue agreement 0.88 / 0.92 / 0.98 |
+| `retr-holdout50-reuse` (holdout 50) | auto_draft_share 0.21 no-twin / 0.26 all; missed_critical 0.000; queue F1 0.53 / 0.63; top-1 sim median 0.964 / 0.975; language match 0.89 (reuse sends EN answers to some DE tickets) |
+| `retr-smoke-reuse` (adversarial 58, case precedents) | 50/58 pass; 7/10 controls escalate on triage low confidence |
+
+### Open
+- [ ] DS1: `app/config/gate.json`. HP-incident recall is 0.87 at min_sim 0.95 (KB-dev): the safety floor needs a p_high threshold (their gate curve has it).
+- [ ] DS1: calibrate triage probabilities (contract asks for it; ECE priority 0.064 all / 0.126 no-twin on holdout 50).
+- [ ] Task 2 benchmark: re-run on real retrieval (the TF-IDF run was stopped after 84 calls; kept as `bench1-tfidf`).
+
 ## Session 2026-11-21 (b): Guardrails (Task 3)
 
 ### Summary

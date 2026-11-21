@@ -13,3 +13,7 @@ data/*.txt
 .ipynb_checkpoints/
 eval/runs/
 eval/reports/
+
+# local model artifacts (DS1 triage models; copy from the team share)
+models
+data/emb

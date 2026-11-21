@@ -54,6 +54,13 @@ def retrieve(ticket: Ticket, k: int = 5, queue: str | None = None) -> list[Prece
 - Works across languages: a German ticket may return English precedents.
 - `queue` is an optional filter (a ladder rung). Ignore it if not implemented yet.
 
+### Status (v1.7, wired by AI engineering from DS1/DS2's local work)
+- `app/triage.py`: loads `models/triage/<TRIAGE_MODEL>/model.joblib` (default `tfidf-lr-v1`, best on KB-dev). Probabilities are not separately calibrated yet.
+- `app/retrieval.py`: Gemini embeddings (`app/embed.py`, `gemini-embedding-001`, 768 dims, cosine). Index = `core_kb.parquet` split `train` with an answer (30,085 rows), not all of `kb.parquet`: KB-dev stays out (it is for fitting thresholds) and core_kb drops the untyped batch and duplicate bodies.
+- Local assets (gitignored, not in git): `data/emb/gemini/core_kb_emb.npy` + `core_kb_ids.parquet` (from `data/embed_kb.py`) and `models/triage/` (from `data/train_tfidf.py`, `data/train_emb.py`). Missing assets -> the pipeline falls back to `app/stubs.py`.
+- Live tickets are PII-masked before triage and retrieval (their text goes to the embedding API). An embedding outage escalates the ticket (`retrieval_error:<kind>`), it never crashes.
+- `min_similarity` default is 0.95 on this scale (measured, `eval/gate_dev.py`). `app/config/gate.json` (DS1) still missing.
+
 ## 4. Test sets (P4)
 
 Folder: `eval/sets/`, one JSON object per line.
