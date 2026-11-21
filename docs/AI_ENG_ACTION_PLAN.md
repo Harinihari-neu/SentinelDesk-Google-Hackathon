@@ -106,13 +106,19 @@ Outputs:
 
 - **`unsupported_number` may over-fire** on harmless numbers (step lists, version strings). Phase 2 task 6 checks this. Possible fix: ignore numbers of 1–2 digits followed by `.` or `)` at line start.
 - **The promise-term check is a fixed list.** It catches the common cases; it isn't a full claim verifier. Say so honestly in Q&A.
-- **Gate `RISKY_ASKS`** uses prefix matching. `credit card` is excepted since v1.4; other prefixes are untested on real data.
+- **Gate `RISKY_ASKS`** uses prefix matching. Exceptions: `credit card` (v1.4), Slack and preisgeben (v1.6). Measured on the real holdout in v1.6 (`guard-realdata-v2`); `guarantee` still over-matches "to guarantee" (= ensure).
 - **Stub triage gets queue badly wrong** (macro-F1 ~0.07 on smoke). That's expected; it's only there to wire things up.
 - **`langdetect` is unreliable on very short text.** The stopword fallback only runs if langdetect is missing.
 - **Escalated tickets get no draft.** That's deliberate: it keeps the "share of tickets touching an LLM" down. If judges want a draft for the human reviewer, add a flag to draft escalated tickets too, marked "for reviewer".
 - **Python 3.9** works, but Google's libraries print end-of-life warnings. Use 3.10+ on the demo machine.
 
 ## Change log
+- v1.6 (2026-11-21): guardrails on real data (Task A). 0 LLM calls. Script: `eval/guard_realdata.py`; runs `guard-realdata-v0` (before) → `v2` (after). Details: `docs/GUARDRAILS.md` "Real data".
+  - Holdout over-blocking by guardrail detectors: 14 → 8 of 12,353 (0.06%), all `unsupported_language`. Injection 0, sensitive 0, KB precedent scan 0 of 49,412.
+  - Fixes (each with a real example and an offline test): langdetect low-confidence fallback; PHONE mask skips dates/timestamps/versions; `credential_request` ignores "password resets/policies", "api key configuration"; `sla` ≠ Slack, `preis` ≠ preisgeben; `is_deferral` accepts "befassen" (fr-ctl-02).
+  - Gate decisions on all 82 hand-written cases unchanged. Tests: guardrails 22/22, fallbacks 15/15.
+  - Open: 60% of core_kb answers contain unfilled placeholders (`<name>`, `<tel_num>`); no check catches them. `guarantee`/`garantieren` (= ensure) over-match; not fixed.
+  - Data note: `kb.parquet` does have `ticket_id` (49,412, none missing); `core_kb` is a subset of it.
 - v1.4 (2026-11-21): guardrails (Task 3). Full write-up: `docs/GUARDRAILS.md`.
   - `eval/sets/adversarial.jsonl` (58 cases) and `adversarial_fresh.jsonl` (18) drafted for P4. Cases carry their own `precedents`.
   - `eval/metrics.py`: `case_failures()` checks every **sent** reply (holding replies too) on folded text; `case_passes_legacy()` kept; new `over_blocking_rate`.

@@ -96,10 +96,13 @@ def precedent_signals(answer: str) -> list:
 
 # ---------- output: the reply asks for credentials ----------
 _CRED = r"(?:password|passwort|kennwort|pin|api[- ]?key|api[- ]?token|login details|credentials|zugangsdaten)"
+# The credential word used as a modifier is not a secret: "password resets", "password policies",
+# "api key mismatch", "api key configuration" (KB answers: 9 of 20 hand-read hits in guard-realdata-v0, 3 in -v1).
+_CRED_MOD = r"(?!\s+(?:resets?|polic\w*|management|settings|mismatch\w*|requirements?|config\w*|expir\w*|richtlinie\w*))"
 _CRED_ASK = re.compile(
     rf"\b(?:send|email|e-mail|share|give us|tell us|reply with|provide|forward|schicken|senden|mailen|mitteilen|"
-    rf"nennen|übermitteln)\b(?:\W+\w+){{0,6}}?\W+(?:your |ihr\w* )?(?:current |old |alte\w* |aktuelle\w* )?{_CRED}\b|"
-    rf"\b(?:old|current|alte\w*|aktuelle\w*) (?:password|passwort|kennwort)\b")
+    rf"nennen|übermitteln)\b(?:\W+\w+){{0,6}}?\W+(?:your |ihr\w* )?(?:current |old |alte\w* |aktuelle\w* )?{_CRED}\b"
+    rf"{_CRED_MOD}|\b(?:old|current|alte\w*|aktuelle\w*) (?:password|passwort|kennwort)\b{_CRED_MOD}")
 _NEG = re.compile(r"\b(?:never|not|don'?t|do not|nie|niemals|nicht|keine\w*)\b")
 
 

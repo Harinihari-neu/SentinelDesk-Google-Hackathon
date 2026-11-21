@@ -26,8 +26,15 @@ _PII = [  # order matters: secrets and cards before IBAN/account/phone, IPs befo
     ("EMAIL", re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")),
     ("IBAN", re.compile(r"\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,7}\b")),
     ("ACCOUNT", re.compile(r"\b\d{9,}\b")),
-    ("PHONE", re.compile(r"(?<!\w)\+?\d[\d\s().-]{7,}\d\b")),
+    ("PHONE", (re.compile(r"(?<!\w)\+?\d[\d\s().-]{7,}\d\b"), lambda m: _phone(m))),
 ]
+# Shapes the PHONE pattern also matches that are not phone numbers (guard-realdata-v0, holdout + adv-big-01):
+# ISO dates and log timestamps "2023-02-20", "2026-11-20 10"; dotted versions and dates "90.0.4430.212", "20.02.2023".
+_NOT_PHONE = re.compile(r"\d{4}-\d{2}-\d{2}(?:[ T]\d{1,2})?|\d+(?:\.\d+)+")
+
+
+def _phone(m):
+    return m.group(0) if _NOT_PHONE.fullmatch(m.group(0)) else "[PHONE]"
 
 
 def mask_pii(text: str):
@@ -38,8 +45,8 @@ def mask_pii(text: str):
         if isinstance(rx, tuple):
             rx, repl = rx
         new, n = rx.subn(repl, text)
-        if kind == "CARD":  # only Luhn-valid numbers were replaced
-            n = new.count("[CARD]") - text.count("[CARD]")
+        if kind in ("CARD", "PHONE"):  # only real matches were replaced (Luhn-valid / not a date or version)
+            n = new.count(f"[{kind}]") - text.count(f"[{kind}]")
         text = new
         if n:
             counts[kind] = n
@@ -58,17 +65,25 @@ def detect_language(text: str) -> str:
     if not text:
         return "other"
     try:
-        from langdetect import DetectorFactory, detect
+        from langdetect import DetectorFactory, detect_langs
 
         DetectorFactory.seed = 0
-        code = detect(text)
-        return code if code in ("en", "de") else "other"
+        top = detect_langs(text)[0]
     except Exception:
-        words = re.findall(r"[a-zäöüß]+", text.lower())
-        de, en = sum(w in _DE for w in words), sum(w in _EN for w in words)
-        if de == en == 0:
-            return "other"
-        return "de" if de > en else "en"
+        return _stopword_vote(text)
+    if top.lang in ("en", "de"):
+        return top.lang
+    # langdetect is unsure on short text: "Brand engagement is currently low" -> nl 0.43 (guard-realdata-v0).
+    # Below 0.9 the stopword vote decides; real FR/ES/IT tickets score >= 0.99 and stay "other".
+    return "other" if top.prob >= 0.9 else _stopword_vote(text)
+
+
+def _stopword_vote(text: str) -> str:
+    words = re.findall(r"[a-zäöüß]+", text.lower())
+    de, en = sum(w in _DE for w in words), sum(w in _EN for w in words)
+    if de == en == 0:
+        return "other"
+    return "de" if de > en else "en"
 
 
 # ---------- normalisation (used by the guard and by the adversarial scorer) ----------

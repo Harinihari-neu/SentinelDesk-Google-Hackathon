@@ -8,6 +8,40 @@ so the numbers that matter are copied here.
 
 ---
 
+## Session 2026-11-21 (d): Guardrails on real data (Task A)
+
+### Summary
+1. New `eval/guard_realdata.py`: runs every code guardrail on DS2's KB (core_kb 33,449; kb 49,412) and holdout inputs (12,353). No LLM, no labels.
+2. Hand-read the flagged items, fixed 5 false-positive patterns with the smallest change, added an offline test for each, and re-ran.
+3. The data is anonymised: 0 URLs and 0 emails anywhere, so no link allowlist can be derived from it.
+
+### Runs (all `eval/runs/guard_realdata/<run>/summary.json`, 0 LLM calls, ~60 s each)
+| Metric | `guard-realdata-v0` | `guard-realdata-v2` |
+|---|---|---|
+| Holdout flagged by any guardrail detector | 14 (0.11%) | **8 (0.06%)** |
+| `possible_injection` / `sensitive_content` | 0 / 0 | 0 / 0 |
+| `unsupported_language` (hand-read FPs) | 14 (9 FP) | 8 (3 FP) |
+| Any `RISKY_ASKS` term (upper bound) | 418 (3.4%) | 380 (3.1%) |
+| KB precedent scan hits (core_kb / kb) | 0 / 0 | 0 / 0 |
+| core_kb answers failing `credential_request` | 29 | 17 |
+| core_kb answers failing `pii_in_reply` | 99 (29/30 real phone numbers) | 99 |
+| core_kb answers failing any of the 3 output checks | 128 (0.38%) | 116 (0.35%) |
+| Holdout tickets with a PII mask (hand-read FPs) | 4 (4 FP) | 0 |
+| Holdout body length p50 / p95 / p99 / max; > 3,000 chars | 412 / 755 / 951 / 1,802; 0 | same |
+
+(`v1` was an intermediate run: same as v2 except `credential_request` 20.)
+
+### Findings
+1. Guardrails barely touch real traffic: 8 of 12,353 tickets (0.06%), and those are mostly true non-EN/DE tickets (`guard-realdata-v2`).
+2. The output checks catch real problems in the KB: 8 of 20 hand-read `credential_request` hits are past answers that ask the customer for login credentials or an API key (`guard-realdata-v1`). The reuse drafter would have sent them.
+3. 60% of core_kb answers contain unfilled placeholders (`<name>`, `<tel_num>`). No check catches them yet.
+4. `guarantee` / `garantieren` match "to guarantee security" (= ensure) in 12/12 hand-read. Left as is: a real demand uses the same verb.
+
+### Next
+- [ ] User: name the real help-centre domain(s) for `CONTACT_ALLOWLIST`.
+- [ ] Decide: add an `unfilled_placeholder` output check (would block 60% of reuse drafts as they stand).
+- [ ] Task 2 (model benchmark): waiting on the KB-file answer.
+
 ## Session 2026-11-21 (b): Guardrails (Task 3)
 
 ### Summary

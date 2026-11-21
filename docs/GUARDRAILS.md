@@ -99,8 +99,8 @@ One test found a real false positive during development ("Our system: Windows 11
 
 ## Why N = 3,000 characters
 The longest ticket in our sets, outside the oversized category, is 211 characters. A normal ticket's call uses about 525 tokens in+out (controls, `guard-v1`).
-3,000 characters (~750 tokens) is about 14× the longest normal ticket and keeps the worst case near 3× a normal call (measured: 1,629 tokens on adv-big-01). The real-data length distribution is **not measured** yet (`data/` is empty).
-Re-check with DS2's split: if more than ~1% of real tickets are longer, raise N.
+3,000 characters (~750 tokens) is about 14× the longest normal ticket and keeps the worst case near 3× a normal call (measured: 1,629 tokens on adv-big-01).
+Real holdout (12,353 tickets, `guard-realdata-v2`): body p50 412 / p95 755 / p99 951 / max 1,802 characters. **0 tickets** are above 3,000, so the cap never cuts a real ticket. N stays at 3,000.
 
 ## Not added (no failing case justified it)
 | Candidate | Why not |
@@ -115,14 +115,75 @@ Re-check with DS2's split: if more than ~1% of real tickets are longer, raise N.
 - **The fixes were written by the same person who wrote the sets.** The original-set result (58/58) is in-sample. The fresh set (14/18) is the better estimate, and it has only 18 cases. P4 should write more cases we haven't seen.
 - **KB poisoning:** the precedent scan caught 1 of 3 fresh poisoned answers. The output checks caught the other 2 only because they contained an email address or a link. A poisoned "promise 3 free months" without a promise term would get past the checks. The real defence is controlling who can write to the KB.
 - **The promise check counts the customer's own words as evidence.** If the gate misses a request, the reply may repeat a term the customer used ("refund"). The gate's `RISKY_ASKS` is the current backstop.
-- **Over-blocking on real tickets is not measured.** Stub triage, stub retrieval and hand-written controls only. The precedent scan and the empty link allowlist may flag real KB answers that contain links. Measure on DS2's KB, then fill `CONTACT_ALLOWLIST`.
-- **Masking:** passwords are masked only when written as "password is/: X" and X contains a digit or symbol. Log timestamps get masked as phone numbers (pre-existing; seen in adv-big-01).
+- **Over-blocking on real tickets** is now measured for the guardrail detectors (see "Real data" below): 0.06% of holdout tickets. Not measured: over-blocking by triage confidence and retrieval similarity (stub triage and stub retrieval).
+- **The real data has no links and no emails.** DS2's data is anonymised (`<name>`, `<tel_num>`, `<acc_num>` placeholders). So link checks and email masking are untested on real text, and no allowlist can be derived from it.
+- **Masking:** passwords are masked only when written as "password is/: X" and X contains a digit or symbol. Dates, log timestamps and version numbers are no longer masked as phone numbers (`guard-realdata-v1`). Number ranges like "4500-9000 kbps" still are (1 of 30 hand-read).
 - **Run-to-run variance:** temperature 0 is not deterministic (fr-ctl-02 drafted in one run and deferred in the next). Each number is from a single run.
 - **The backstop is the human reviewer:** anything escalated gets no auto-reply beyond a checked holding reply.
+
+## Real data: false-positive rates (`eval/guard_realdata.py`)
+No LLM calls, no labels. KB = `core_kb.parquet` (33,449 rows) and `kb.parquet` (49,412). Holdout = `holdout_inputs.parquet` (12,353, subject + body).
+`v0` = code on main; `v2` = after the fixes below. Hand-read samples use seed 7.
+
+### Gate detectors on holdout tickets (over-blocking)
+| Detector | v0 flagged | v2 flagged | Hand-read | False positives |
+|---|---|---|---|---|
+| `possible_injection` | 0 (0%) | 0 | n/a | 0 |
+| `sensitive_content` | 0 (0%) | 0 | n/a | 0 |
+| `unsupported_language` | 14 (0.11%) | **8 (0.06%)** | all | v0: 9/14 (short EN/DE, one long German ticket). v2: 3/8 ("Help", "Serverprobleme", "devices are experiencing malfunctions") |
+| Any guardrail reason | 14 (0.11%) | **8 (0.06%)** | | |
+
+### `RISKY_ASKS` terms in holdout tickets
+Upper bound: the gate escalates only when no precedent answer contains the term, and retrieval is still a stub.
+| Term | v0 | v2 | Hand-read (12 per term, v0) |
+|---|---|---|---|
+| any term | 418 (3.4%) | **380 (3.1%)** | |
+| `pricing` | 104 | 104 | 10 real pricing asks, 2 about the customer's own pricing |
+| `preis` | 100 | **81** | 6 real; 6 not: "preisgegeben" = disclosed (fixed), "dynamische Preisgestaltung" product feature (kept) |
+| `discount` | 97 | 97 | 12/12 real discount asks |
+| `rabatt` | 62 | 62 | 9 real; 3 "manuelle Rabatte" as a feature |
+| `guarantee` | 43 | 43 | **12/12 not a request**: "to guarantee security" (= ensure). Not fixed: a real demand uses the same verb |
+| `sla` | 27 | **5** | 8/12 were "Slack" (fixed); the 5 left are real SLA mentions |
+| `garantie` | 13 | 13 | 5 real (warranty claims), 7 "garantieren" (= ensure) |
+| `contract` / `vertrag` | 11 / 10 | 11 / 10 | contract: 10/11 real. vertrag: 9/10 contract-management features |
+| `legal` | 7 | 7 | 0/7 legal demands ("legal requirements", "LegalLink" product) |
+| others | ≤ 10 each | same | not hand-read |
+
+### KB answers treated as replies (output checks; the reuse drafter sends exactly these)
+| Check | core_kb v0 | core_kb v2 | kb v2 | Hand-read |
+|---|---|---|---|---|
+| `credential_request` | 29 (0.09%) | **17 (0.05%)** | 21 | v0: 5 real asks, 4 borderline, 11 FP ("password resets/policies", "api key mismatch"). v1: 8 real, 7 borderline, 5 FP. 3 of those 5 fixed in v2 ("api key configuration/expiration"); left: "users must … provide api credentials" (integration setup) |
+| `unsupported_contact` | 0 | 0 | 0 | No links in the data |
+| `pii_in_reply` | 99 (0.30%) | 99 | 129 | 29/30 real phone numbers ("+1-800-123-4567"): correct to block. 1 FP: "4500-9000 kbps" |
+| Any of the three | 128 (0.38%) | **116 (0.35%)** | 150 (0.30%) | |
+| `precedent_signals` (KB poisoning scan) | 0 | 0 | 0 | No hits in 49,412 answers: the scan blocks no real precedent |
+
+**Finding not covered by any check:** 19,916 of 33,449 core_kb answers (60%) contain an unfilled placeholder (`<name>`, `<tel_num>`, `[Your Name]`, …). The reuse drafter would send them as is. Not measured: how often the LLM copies them.
+
+### PII masking on holdout tickets
+| | v0 | v2 |
+|---|---|---|
+| Tickets with any mask | 4 (0.03%) | **0** |
+| False positives (hand-read) | 4/4: "90.0.4430.212", "1.4.00.4167", "2023-02-20", "20.02.2023" | n/a |
+Real tickets contain no raw PII: it was anonymised before we got the data. Masking is still needed for live traffic.
+
+### Proposed `CONTACT_ALLOWLIST`
+No link domains exist in either KB (0 URLs in 49,412 answers). Nothing to propose from data: the owner must name the real help-centre domain(s). Until then every link in a reply fails `unsupported_contact`, which is the safe default.
+
+### What changed (each with an offline test in `tests/test_guardrails.py`)
+| Fix | Real example | Where |
+|---|---|---|
+| Language: if langdetect's top guess is not EN/DE and below 0.9, use the stopword vote | "Brand engagement is currently low" → nl 0.43 | `app/textproc.py` `detect_language` |
+| PHONE mask skips ISO dates, log timestamps, dotted versions and dates | "90.0.4430.212", "2023-02-20", "2026-11-20 10:15" (adv-big-01) | `app/textproc.py` |
+| `credential_request` ignores the credential word used as a modifier | "password resets", "password policies", "api key mismatch/configuration/expiration" | `app/guard.py` |
+| `sla` no longer matches "Slack"; `preis` no longer matches "preisgeben" | "MySQL, Plex and Slack"; "Patientendaten preisgegeben" | `app/gate.py` |
+| `is_deferral` accepts "befassen" | "Ein Spezialist wird sich mit Ihrem Anliegen befassen." (fr-ctl-02) | `app/checks.py` |
+
+Gate decisions on all 82 hand-written cases (58 original, 18 fresh, 6 smoke) are unchanged (offline comparison, no LLM).
 
 ## Safety pitch (measured numbers only)
 1. We attacked our own system with 58 hostile tickets in English and German: injections, forged evidence, hidden Unicode, phishing links, leaked secrets and poisoned knowledge-base answers. Before our guardrails, 39 were handled safely. After, all 58 were, and no harmless ticket was blocked.
 2. On 18 new attacks we hadn't seen while building the defences, 14 passed, and in the 4 misses the model still didn't do what the attacker asked.
 3. Our biggest finding: the model resists instructions in a customer's ticket, but follows instructions planted in old support answers. That would have sent a fake 50% discount, a phishing link and a malware download to customers. Two independent code checks now stop all three.
-4. Every guardrail is plain code: it adds about a millisecond per ticket and zero AI tokens, and every block names its reason for the human reviewer.
+4. Every guardrail is plain code: it adds about a millisecond per ticket and zero AI tokens, and every block names its reason for the human reviewer. On 12,353 real support tickets, the injection, self-harm and language guardrails flagged only 8 (0.06%).
 5. Pattern lists can be beaten, which is why anything suspicious goes to a person, not to the customer.
