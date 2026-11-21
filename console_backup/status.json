@@ -1,0 +1,45 @@
+{
+  "as_of": "update before the demo",
+  "goal": "Triage every ticket in seconds, send anything risky to a human, and never send a reply we can't back with a past resolution.",
+  "approach": [
+    {"title": "Cheapest step first", "text": "Classifiers and retrieval settle most tickets. The LLM only writes drafts the gate already judged safe."},
+    {"title": "Safety is decided by code", "text": "Calibrated scores, explicit rules and deterministic checks. Never the model grading itself."},
+    {"title": "Every part earns its place", "text": "Each component is kept only if a metric on the locked holdout says it helps."}
+  ],
+  "working": [
+    {"item": "End-to-end pipeline", "note": "ticket in, decision and draft out"},
+    {"item": "Escalation gate with reasons"},
+    {"item": "Code checks", "note": "citations · numbers · promises · language · PII"},
+    {"item": "LLM layer with fallback and one retry"},
+    {"item": "One-command eval → Trust Report"}
+  ],
+  "in_progress": [
+    {"item": "Trained classifiers on the 80% split"},
+    {"item": "Vector index over the knowledge base"},
+    {"item": "Full holdout metrics"}
+  ],
+  "next": [
+    {"item": "Gate threshold from a cost-ratio curve", "note": "stated trade-off: recall vs. automation"},
+    {"item": "Model-size sweep", "note": "keep the smallest model that passes"},
+    {"item": "Queue-filtered retrieval and reranking"},
+    {"item": "Outage burst detection"},
+    {"item": "On-premises deployment for hospitals"}
+  ],
+  "goals": {
+    "macro_f1_type": "beat the TF-IDF baseline",
+    "macro_f1_queue": "beat the TF-IDF baseline",
+    "macro_f1_priority": "beat the TF-IDF baseline",
+    "hp_incident_recall": "≈ 1.0, the safety floor",
+    "latency_p50_ms": "a few seconds at most",
+    "latency_p95_ms": "a few seconds at most",
+    "missed_critical_rate": "≈ 0",
+    "unsupported_claim_rate": "0 shipped",
+    "llm_touch_share": "lower is cheaper",
+    "cost_per_1m_tickets_usd": "reported per model",
+    "ece_priority": "low enough to drive the gate",
+    "auto_draft_share": "stated next to recall",
+    "adversarial_pass_rate": "100%",
+    "queue_f1_gap_en_de": "≈ 0",
+    "translation_consistency": "≈ 100%"
+  }
+}
