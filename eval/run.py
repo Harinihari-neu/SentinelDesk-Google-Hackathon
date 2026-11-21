@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from app import pipeline  # noqa: E402
+from app.draft import PROMPT_VERSION  # noqa: E402
 from app.schemas import Ticket  # noqa: E402
 from eval.metrics import HEADLINE, METRICS  # noqa: E402
 
@@ -100,6 +101,7 @@ def main():
               "model": a.model or os.getenv("LLM_MODEL", "gemini-3.5-flash-lite"),
               "triage": pipeline.TRIAGE_SOURCE, "retrieval": pipeline.RETRIEVAL_SOURCE,
               "triage_version": rows[0]["result"].triage.model_version if rows else None,
+              "prompt": PROMPT_VERSION, "fallbacks": os.getenv("LLM_MODEL_FALLBACKS", ""),
               "time": time.strftime("%Y-%m-%d %H:%M:%S")}
     records = [{"id": r["result"].ticket.ticket_id, "set": r["set"], "status": r["result"].status,
                 "pred": {h: getattr(r["result"].triage, h).label for h in ("type", "queue", "priority")},
@@ -123,6 +125,8 @@ def ladder():
     out = []
     for p in sorted(RUNS.glob("*.json"), key=lambda p: p.stat().st_mtime):
         r = json.loads(p.read_text())
+        if not isinstance(r, dict) or "metrics" not in r or "config" not in r:
+            continue  # not a harness run (e.g. a probe output)
         vals = {m["name"]: m["value"] for m in r["metrics"]}
         out.append({"run": r["config"]["name"], "model": r["config"]["model"], "k": r["config"]["k"],
                     "triage": r["config"].get("triage_version"), "source": r["config"]["source"],

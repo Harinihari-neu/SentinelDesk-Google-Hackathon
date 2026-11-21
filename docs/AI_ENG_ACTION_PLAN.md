@@ -113,6 +113,20 @@ Outputs:
 - **Python 3.9** works, but Google's libraries print end-of-life warnings. Use 3.10+ on the demo machine.
 
 ## Change log
+- v1.3 (2026-11-21): error handling, German fixes, prompt v1.1. All numbers on gemini-3.5-flash-lite.
+  - **German test** (`eval/german_probe.py`, `eval/sets/translation_pairs.jsonl`): 10 hand-written EN/DE ticket pairs, each with its own precedent; gate bypassed. Conditions: en-en, de-de, de-en (German ticket, English precedents). Outputs in `eval/runs/probes/`.
+  - Before fixes (`german-probe-v2`, prompt v1): checks pass en-en 8/9, de-de 9/10, de-en 7/9 (drafts that returned). Failures: one de-en reply fully in English; one de-en reply with "oe/ae/ue" instead of umlauts (not caught); "We have unlocked it" / "Wir haben es entsperrt" past-action claims; refund-trap deferrals failed `no_citations`.
+  - German costs more tokens: de-de vs en-en, input +22%, output +19% for the same reply length (`german-probe-v2`).
+  - Unpaced runs hit `429 RESOURCE_EXHAUSTED` after ~19 quick calls (per-minute quota: a call 70 s later worked) and sporadic `503 high demand` (`german-probe`, discarded).
+  - `app/llm.py`: retries with exponential backoff + jitter on 429/5xx/timeout/network (honours 429 `retryDelay`); 404/400/truncated/blocked/empty/bad JSON move to `LLM_MODEL_FALLBACKS`; 401/403 stop at once; total deadline `LLM_DEADLINE_S` (20 s); request timeout `LLM_TIMEOUT_S` (30 s); client pacing `LLM_MIN_INTERVAL_S` (excluded from latency). `LLMCall` gains `error_kind`, `attempts`, `retry_wait_ms`, `fallback_from`, `errors_seen`. Tokens of failed-but-billed attempts (truncated, blocked) are counted in cost. Real 404 on `gemini-2.5-flash` fell back to flash-lite in 1.1 s.
+  - `app/checks.py`: failure code is now `llm_error:<kind>`; truncated output counts as `schema_invalid`; a short fact-free deferral ("a specialist will follow up") needs no citation; new `german_transliteration` failure.
+  - `app/pipeline.py`: a passing deferral with no citations is sent as a holding reply but the ticket stays `escalated`; step-6 retry skipped on auth/config errors.
+  - `app/draft.py` prompt v1.1 (`PROMPT_VERSION`, recorded in run config): never claim past actions; translate precedents into the reply language; use ä/ö/ü/ß.
+  - After fixes (`german-probe-v4`): checks pass 10/10 in all three conditions, traps 3/3 each, no language mismatch, no past-action claims. Latency p50 0.98 / 0.89 / 0.82 s (en-en / de-de / de-en); untriggered slow calls up to 8.0 s. `german-probe-v3` (same code, pacing wrongly counted in latency): 29/30 pass; the one fail was a real transliteration ("koennen", "loeschen"), so the prompt rule reduces it but the check is still needed.
+  - Prompt v1.1 costs more input: +34% in en-en (368 → 494 tokens, `german-probe-v2` → `v4`).
+  - `gemini-smoke-v2`: 3/3 drafts pass. New nit: "We can re-sent the reset link" (grammar, copied from precedent wording). SMOKE-04 now promises a future action ("wir werden … prüfen"): allowed by rule 5, but a judgement call.
+  - `tests/test_fallbacks.py`: 15 offline tests (fault injection via `LLM_FAKE_ERRORS`) for 429, 5xx, 404, 400, 401, timeout, network, truncated, bad JSON, deadline, pipeline under outage, deferral and transliteration checks.
+  - `eval/run.py`: improvement table skips non-harness JSON files.
 - v1.2 (2026-11-21): Python 3.12 venv via uv (README: requires 3.10+); google-genai 3.6.1.
   - `app/llm.py`: new `LLM_THINKING_LEVEL` (minimal|low|medium|high), sent as `ThinkingConfig.thinking_level`. Wins over `LLM_THINKING_BUDGET` if both are set.
   - Run `gemini-smoke` (flash-lite, 6 smoke tickets, stub triage/retrieval): 3/6 drafted (gate escalated 3). Parse 3/3, language match 3/3, checks pass 3/3. LLM latency 0.8–1.4 s per call. 234 tokens/ticket.
