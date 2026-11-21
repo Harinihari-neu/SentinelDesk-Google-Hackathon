@@ -97,8 +97,13 @@ def _gemini(system, user, schema, model, max_tokens, temperature):
         _gemini_client = genai.Client(api_key=key) if key else genai.Client()
     cfg = dict(system_instruction=system, temperature=temperature, max_output_tokens=max_tokens,
                response_mime_type="application/json", response_schema=schema)
-    budget = os.getenv("LLM_THINKING_BUDGET")  # e.g. "0" to switch thinking off on 2.5 Flash
-    if budget is not None:
+    # Thinking control. Hidden thinking tokens are billed as output and count against max_output_tokens.
+    # LLM_THINKING_LEVEL: minimal | low | medium | high (Gemini 3.x). LLM_THINKING_BUDGET: int (older models).
+    # Unset = model default. Only one of the two is sent; level wins if both are set.
+    level, budget = os.getenv("LLM_THINKING_LEVEL"), os.getenv("LLM_THINKING_BUDGET")
+    if level:
+        cfg["thinking_config"] = types.ThinkingConfig(thinking_level=level.upper())
+    elif budget is not None:
         cfg["thinking_config"] = types.ThinkingConfig(thinking_budget=int(budget))
     r = _gemini_client.models.generate_content(model=model, contents=user,
                                                config=types.GenerateContentConfig(**cfg))

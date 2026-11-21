@@ -19,6 +19,7 @@ PROMISE_TERMS = ["refund", "reimburse", "compensation", "credit", "discount", "f
                  "garantie", "garantiert", "gewährleistung"]
 _ID = re.compile(r"TKT-\d{5}")
 _NUM = re.compile(r"\d+(?:[.,]\d+)?")
+_LIST_MARKER = re.compile(r"^\s*\d{1,2}[.)]\s", re.MULTILINE)  # "1. " / "2) " step numbers are not claims
 
 
 def run_checks(draft: Draft, ticket: Ticket, precedents: list, llm_error: Optional[str] = None) -> CheckResult:
@@ -39,7 +40,7 @@ def run_checks(draft: Draft, ticket: Ticket, precedents: list, llm_error: Option
     evidence_src = [retrieved[c] for c in cited] or precedents
     evidence = " ".join(f"{p.subject or ''} {p.body} {p.answer}" for p in evidence_src).lower()
     evidence += " " + f"{ticket.subject or ''} {ticket.body}".lower()  # echoing the user's own numbers is fine
-    reply = _ID.sub(" ", draft.reply).lower()
+    reply = _LIST_MARKER.sub(" ", _ID.sub(" ", draft.reply)).lower()
 
     ev_nums = {n.replace(",", ".") for n in _NUM.findall(evidence)}
     for n in _NUM.findall(reply):

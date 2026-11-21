@@ -113,5 +113,12 @@ Outputs:
 - **Python 3.9** works, but Google's libraries print end-of-life warnings. Use 3.10+ on the demo machine.
 
 ## Change log
+- v1.2 (2026-11-21): Python 3.12 venv via uv (README: requires 3.10+); google-genai 3.6.1.
+  - `app/llm.py`: new `LLM_THINKING_LEVEL` (minimal|low|medium|high), sent as `ThinkingConfig.thinking_level`. Wins over `LLM_THINKING_BUDGET` if both are set.
+  - Run `gemini-smoke` (flash-lite, 6 smoke tickets, stub triage/retrieval): 3/6 drafted (gate escalated 3). Parse 3/3, language match 3/3, checks pass 3/3. LLM latency 0.8–1.4 s per call. 234 tokens/ticket.
+  - Runs `flash-think-minimal-smoke` / `flash-think-low-smoke` (gemini-3.5-flash): thinking cap works, output no longer empty, all 3 drafts pass. Tokens/ticket 228 / 232, so almost no hidden thinking. But latency was 17–98 s (minimal) and 32–195 s (low) per call: server-side, not thinking. Not usable live today.
+  - `app/checks.py`: step numbers at line start ("1. ", "2) ") no longer count as `unsupported_number`. Found with offline synthetic drafts, not in the real drafts. "48 hours", "version 2", "50 dollars" still flagged.
+  - Gap the checks miss: drafts copy past actions as if done for this customer ("We re-sent the reset link…", "Wir haben die doppelte Belastung geprüft…"). Prompt fix planned for prompt v2 (Task 2).
+  - Stub retrieval is not cross-lingual: German SMOKE-06 (password reset) escalated `no_close_precedent` while English SMOKE-02 drafted.
 - v1.1: Gemini key verified. Gemini 2.5 retired for new keys (404); default now `gemini-3.5-flash-lite` (0.7–1.3 s warm, first call ~10 s cold). `gemini-3.5-flash` burned its whole output cap on hidden thinking (66 s, empty output): don't use it until thinking can be capped (needs newer google-genai on Python 3.10+). Gemma 4 (`gemma-4-26b-a4b-it`) is available via the same key: candidate for the small-open-model rung. PRICES left empty until verified; cost metric shows n/a for unpriced models.
 - v1: llm gateway, pipeline, gate, checks, harness, smoke set, offline run verified.
