@@ -3,6 +3,7 @@
     python eval/run.py --name baseline                 # holdout sample (needs data split), else smoke set
     python eval/run.py --name smoke --smoke            # force the built-in smoke set
     LLM_BACKEND=fake python eval/run.py --smoke        # fully offline
+    python eval/run.py --name reuse --drafter reuse    # no-LLM baseline: send the top precedent's answer
 
 Writes eval/runs/<name>.json, eval/reports/latest.json and eval/reports/latest.md.
 Holdout labels are read ONLY here, after the pipeline has produced its predictions.
@@ -22,7 +23,7 @@ sys.path.insert(0, str(ROOT))
 from app import pipeline  # noqa: E402
 from app.draft import PROMPT_VERSION  # noqa: E402
 from app.checks import run_checks  # noqa: E402
-from app.draft import draft as make_draft  # noqa: E402
+from app.draft import REUSE_MODEL, reuse_draft, draft as make_draft  # noqa: E402
 from app.schemas import Precedent, Ticket  # noqa: E402
 from eval.metrics import HEADLINE, METRICS, case_failures, case_passes_legacy, sent_reply  # noqa: E402
 
@@ -47,7 +48,23 @@ def load_holdout(n, smoke):
     X = X.sample(n=min(n, len(X)), random_state=SAMPLE_SEED)
     tickets = [Ticket(ticket_id=r.ticket_id, subject=(r.subject if isinstance(r.subject, str) else None),
                       body=r.body) for r in X.itertuples()]
-    return tickets, "holdout"
+    return [(t, None) for t in tickets], "holdout"  # labels attached later, after predictions
+
+
+PRIORITY_MAP = {"critical": "high", "very_low": "low"}  # holdout uses 5 levels; we train and score on 3
+
+
+def normalize_label(y: dict) -> dict:
+    """Map holdout labels onto the label space we train on (core_kb: 3 priorities, 10 queues, 4 types).
+    ~21% of the holdout is a separate batch with no type and topic-style queues ("Health/Medical Services"):
+    its type and queue become None (left out of type/queue F1), but its priority is still scored, and
+    `critical` counts as high so the most urgent tickets stay inside the high-priority metrics."""
+    y = {k: (None if isinstance(v, float) and v != v else v) for k, v in y.items()}  # NaN -> None
+    y["priority_raw"] = y.get("priority")
+    y["priority"] = PRIORITY_MAP.get(y.get("priority"), y.get("priority"))
+    if y.get("type") is None:
+        y["queue_raw"], y["queue"] = y.get("queue"), None
+    return y
 
 
 def attach_labels(tickets):
@@ -59,7 +76,15 @@ def attach_labels(tickets):
 
     Y = pd.read_parquet(p).set_index("ticket_id")
     ids = [t.ticket_id for t in tickets if t.ticket_id in Y.index]
-    return {i: Y.loc[i].to_dict() for i in ids}
+    return {i: normalize_label(Y.loc[i].to_dict()) for i in ids}
+
+
+def load_twins():
+    """Holdout tickets whose body also appears verbatim in the KB. Retrieval finds the duplicate, so reuse
+    looks perfect and triage gets an easy hit: every metric is also reported without them (value_no_twin).
+    Built from ticket text only, no labels. Returns None if the file is missing."""
+    p = ROOT / "data" / "holdout_kb_twins.txt"
+    return set(p.read_text().split()) if p.exists() else None
 
 
 def main():
@@ -70,17 +95,20 @@ def main():
     ap.add_argument("--model", default=None)
     ap.add_argument("--backend", default=None)
     ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--drafter", choices=["llm", "reuse"], default=None,
+                    help="reuse = no-LLM baseline (top precedent's stored answer). Default: env DRAFTER or llm")
     ap.add_argument("--no-adversarial", action="store_true")
     ap.add_argument("--adv-set", default="adversarial.jsonl", help="file in eval/sets/")
     ap.add_argument("--gate-bypass", action="store_true",
                     help="adversarial cases the gate escalated are ALSO drafted (not sent) to measure the LLM + "
                          "checks layer on its own. Costs one extra LLM call per gate-escalated case.")
     a = ap.parse_args()
+    a.drafter = a.drafter or os.getenv("DRAFTER", "llm")
 
     loaded, source = load_holdout(a.n, a.smoke)
     rows = []
     for t, lab in loaded:
-        rows.append({"set": source, "result": pipeline.run_ticket(t, k=a.k, model=a.model, backend=a.backend),
+        rows.append({"set": source, "result": pipeline.run_ticket(t, k=a.k, model=a.model, backend=a.backend, drafter=a.drafter),
                      "label": lab, "case": None})
     if source == "holdout":
         labels = attach_labels([t for t, _ in loaded])
@@ -90,7 +118,8 @@ def main():
         for c in _jsonl(SETS / a.adv_set):
             t = Ticket(ticket_id=c["id"], subject=c.get("subject"), body=c["body"])
             precs = case_precedents(c)
-            res = pipeline.run_ticket(t, k=a.k, model=a.model, backend=a.backend, precedents=precs)
+            res = pipeline.run_ticket(t, k=a.k, model=a.model, backend=a.backend, precedents=precs,
+                                     drafter=a.drafter)
             row = {"set": "adversarial", "result": res, "label": None, "case": c, "bypass": None}
             if a.gate_bypass and res.draft is None:
                 row["bypass"] = bypass_draft(res, a)
@@ -98,19 +127,31 @@ def main():
             print(f"{c['id']:<14} {res.status:<17} gate={res.gate.reasons} "
                   f"fail={case_failures(row)} {res.timings_ms['total']:.0f}ms", flush=True)
 
+    twins = load_twins() if source == "holdout" else None
+    for r in rows:
+        r["twin"] = bool(twins and r["set"] == "holdout" and r["result"].ticket.ticket_id in twins)
     main_rows = [r for r in rows if r["set"] != "adversarial"]
+    no_twin_rows = [r for r in main_rows if not r["twin"]]
     results = []
     for m in METRICS:
         scope = rows if m["stage"] == "robustness" else main_rows
-        try:
-            v = m["fn"](scope)
-        except Exception as e:  # a broken metric must not kill the report
-            v, m = None, {**m, "decision": f"{m['decision']} [ERROR {type(e).__name__}: {e}]"}
-        results.append({k: m[k] for k in ("name", "stage", "decision", "higher_is_better")} | {"value": v})
+        vals = {}
+        for key, sc in (("value", scope), ("value_no_twin", None if twins is None or m["stage"] == "robustness"
+                                                                else no_twin_rows)):
+            if sc is None:
+                vals[key] = None
+                continue
+            try:
+                vals[key] = m["fn"](sc)
+            except Exception as e:  # a broken metric must not kill the report
+                vals[key], m = None, {**m, "decision": f"{m['decision']} [ERROR {type(e).__name__}: {e}]"}
+        results.append({k: m[k] for k in ("name", "stage", "decision", "higher_is_better")} | vals)
 
     config = {"name": a.name, "source": source, "n": len(main_rows), "n_adversarial": len(rows) - len(main_rows),
+              "n_twins": None if twins is None else len(main_rows) - len(no_twin_rows),
               "k": a.k or int(os.getenv("RAG_K", "3")), "backend": a.backend or os.getenv("LLM_BACKEND", "gemini"),
-              "model": a.model or os.getenv("LLM_MODEL", "gemini-3.5-flash-lite"),
+              "model": REUSE_MODEL if a.drafter == "reuse" else (a.model or os.getenv("LLM_MODEL", "gemini-3.5-flash-lite")),
+              "drafter": a.drafter,
               "triage": pipeline.TRIAGE_SOURCE, "retrieval": pipeline.RETRIEVAL_SOURCE,
               "triage_version": rows[0]["result"].triage.model_version if rows else None,
               "prompt": PROMPT_VERSION, "fallbacks": os.getenv("LLM_MODEL_FALLBACKS", ""),
@@ -120,7 +161,7 @@ def main():
                 "label": r["label"], "gate": r["result"].gate.reasons,
                 "failures": r["result"].checks.failures if r["result"].checks else [],
                 "reply": r["result"].draft.reply if r["result"].draft else None,
-                "ms": round(r["result"].timings_ms["total"], 1)} for r in rows]
+                "twin": r["twin"], "ms": round(r["result"].timings_ms["total"], 1)} for r in rows]
     for rec, r in zip(records, rows):
         if r.get("case"):
             rec.update(adversarial_record(r))
@@ -152,7 +193,10 @@ def bypass_draft(res, a):
     from app.textproc import mask_pii
     t = res.ticket
     masked = t.model_copy(update={"subject": mask_pii(t.subject or "")[0] or None, "body": mask_pii(t.body)[0]})
-    d, call = make_draft(masked, res.precedents, model=a.model, backend=a.backend)
+    if a.drafter == "reuse":
+        d, call = reuse_draft(masked, res.precedents)
+    else:
+        d, call = make_draft(masked, res.precedents, model=a.model, backend=a.backend)
     chk = run_checks(d, t, res.precedents, llm_error=call.error)
     return {"reply": d.reply, "cited": d.cited_ticket_ids, "failures": chk.failures, "passed": chk.passed,
             "tokens": call.in_tokens + call.out_tokens, "latency_ms": round(call.latency_ms, 1)}
@@ -206,7 +250,8 @@ def ladder():
         r = json.loads(p.read_text())
         if not isinstance(r, dict) or "metrics" not in r or "config" not in r:
             continue  # not a harness run (e.g. a probe output)
-        vals = {m["name"]: m["value"] for m in r["metrics"]}
+        vals = {m["name"]: (m["value_no_twin"] if m.get("value_no_twin") is not None else m["value"])
+                for m in r["metrics"]}
         out.append({"run": r["config"]["name"], "model": r["config"]["model"], "k": r["config"]["k"],
                     "triage": r["config"].get("triage_version"), "source": r["config"]["source"],
                     **{h: vals.get(h) for h in HEADLINE}})
@@ -223,10 +268,20 @@ def to_markdown(rep):
              f"Source **{c['source']}** (n={c['n']}, adversarial={c['n_adversarial']}) · model `{c['model']}` "
              f"({c['backend']}) · k={c['k']} · triage `{c['triage']}` · retrieval `{c['retrieval']}` · {c['time']}", "",
              "## Headline", ""]
-    vals = {m["name"]: m["value"] for m in rep["metrics"]}
-    lines += [f"- **{h}**: {_fmt(vals.get(h))}" for h in HEADLINE]
-    lines += ["", "## All metrics", "", "| Stage | Metric | Value | Decision it drives |", "|---|---|---|---|"]
-    lines += [f"| {m['stage']} | {m['name']} | {_fmt(m['value'])} | {m['decision']} |" for m in rep["metrics"]]
+    by = {m["name"]: m for m in rep["metrics"]}
+    if c.get("n_twins") is not None:
+        lines += [f"{c['n_twins']} of {c['n']} tickets have a verbatim duplicate in the KB (twins). "
+                  "**No-twin** is the honest number; *all* includes the easy duplicates.", ""]
+        lines += [f"- **{h}**: {_fmt(by[h].get('value_no_twin'))} no-twin · {_fmt(by[h]['value'])} all"
+                  for h in HEADLINE if h in by]
+        lines += ["", "## All metrics", "", "| Stage | Metric | No-twin | All | Decision it drives |",
+                  "|---|---|---|---|---|"]
+        lines += [f"| {m['stage']} | {m['name']} | {_fmt(m.get('value_no_twin'))} | {_fmt(m['value'])} | "
+                  f"{m['decision']} |" for m in rep["metrics"]]
+    else:
+        lines += [f"- **{h}**: {_fmt(by[h]['value'] if h in by else None)}" for h in HEADLINE]
+        lines += ["", "## All metrics", "", "| Stage | Metric | Value | Decision it drives |", "|---|---|---|---|"]
+        lines += [f"| {m['stage']} | {m['name']} | {_fmt(m['value'])} | {m['decision']} |" for m in rep["metrics"]]
     if rep.get("adversarial"):
         cols = ["n", "pass", "pass_legacy", "escalated", "sent", "llm_drafted", "llm_obeyed", "checks_blocked"]
         lines += ["", "## Adversarial set by category", "",
@@ -236,7 +291,7 @@ def to_markdown(rep):
         lines += [f"| {cat} | " + " | ".join(str(v[k]) for k in cols) + " |" for cat, v in rep["adversarial"].items()]
     if rep["ladder"]:
         cols = ["run", "model", "k", "triage", "source"] + HEADLINE
-        lines += ["", "## Ladder (all saved runs)", "", "| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
+        lines += ["", "## Ladder (all saved runs; no-twin values where the run has them)", "", "| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
         lines += ["| " + " | ".join(_fmt(row.get(k)) for k in cols) + " |" for row in rep["ladder"]]
     return "\n".join(lines) + "\n"
 
