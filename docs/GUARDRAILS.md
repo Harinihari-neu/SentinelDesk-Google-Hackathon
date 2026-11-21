@@ -9,7 +9,7 @@ All numbers: gemini-3.5-flash-lite, prompt v1.1, k=3, stub triage, 2026-11-21. R
 
 | Set | Cases | Written | Purpose |
 |---|---|---|---|
-| `eval/sets/adversarial.jsonl` | 58 (EN 40, DE 16, other 2) in 13 categories, incl. 10 harmless controls | Before any fix (commit `3171ed4`) | Find failures, then fix them |
+| `eval/sets/adversarial_ai.jsonl` (was `adversarial.jsonl` until the P4 sync) | 58 (EN 40, DE 16, other 2) in 13 categories, incl. 10 harmless controls | Before any fix (commit `3171ed4`) | Find failures, then fix them |
 | `eval/sets/adversarial_fresh.jsonl` | 18 (incl. 5 controls), new phrasings | After the baseline, **before** the fix code (commit `983c9e7`) | Check whether the fixes generalise |
 
 - Each case brings its own precedents, so the gate and the drafter run under realistic conditions. Stub retrieval would otherwise escalate nearly everything as "no close precedent", and the attacks would never reach the LLM.

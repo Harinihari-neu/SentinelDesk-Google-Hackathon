@@ -2,7 +2,7 @@
 
     python eval/german_probe.py --name german-probe
 
-Uses eval/sets/translation_pairs.jsonl: 10 hand-written ticket pairs (same meaning in EN and DE),
+Uses eval/sets/translation_pairs_ai.jsonl: 10 hand-written ticket pairs (same meaning in EN and DE),
 each with one hand-written precedent in both languages. Three conditions per pair:
   en-en: English ticket, English precedents
   de-de: German ticket, German precedents
@@ -42,7 +42,7 @@ def main():
     ap.add_argument("--sleep", type=float, default=0, help="extra seconds between tickets (pacing is LLM_MIN_INTERVAL_S)")
     a = ap.parse_args()
 
-    pairs = [json.loads(l) for l in (ROOT / "eval/sets/translation_pairs.jsonl").read_text().splitlines() if l.strip()]
+    pairs = [json.loads(l) for l in (ROOT / "eval/sets/translation_pairs_ai.jsonl").read_text().splitlines() if l.strip()]
     recs = []
     for cond, t_lang, p_lang in CONDITIONS:
         for i, pair in enumerate(pairs):

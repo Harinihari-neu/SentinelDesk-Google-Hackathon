@@ -113,6 +113,11 @@ Outputs:
 - **Python 3.9** works, but Google's libraries print end-of-life warnings. Use 3.10+ on the demo machine.
 
 ## Change log
+- v1.5 (2026-11-21): synced P4's `testsets` branch (no LLM calls, no code logic changes).
+  - Both sides had created `eval/sets/adversarial.jsonl` and `translation_pairs.jsonl`. P4's keep those names; ours are now `adversarial_ai.jsonl` (58) and `translation_pairs_ai.jsonl` (10).
+  - Brought in from P4: `adversarial.jsonl` (30, no `precedents`), `translation_pairs.jsonl` (8), `outage_burst.jsonl` (4), `validate.py`, `docs/QA_LOG.md`.
+  - `eval/run.py` default `--adv-set` is now `adversarial_ai.jsonl`; `eval/german_probe.py` reads `translation_pairs_ai.jsonl`.
+  - P4's set is not run yet (Task B: `guard-p4`). Without `precedents`, most cases will escalate `no_close_precedent` under stub retrieval.
 - v1.4 (2026-11-21): guardrails (Task 3). Full write-up: `docs/GUARDRAILS.md`.
   - `eval/sets/adversarial.jsonl` (58 cases) and `adversarial_fresh.jsonl` (18) drafted for P4. Cases carry their own `precedents`.
   - `eval/metrics.py`: `case_failures()` checks every **sent** reply (holding replies too) on folded text; `case_passes_legacy()` kept; new `over_blocking_rate`.

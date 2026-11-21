@@ -1,7 +1,7 @@
 """Offline tests for the guardrail detectors (app/guard.py, gate, checks, masking). No API calls, no key.
 
     python tests/test_guardrails.py        # or: pytest tests/
-Case IDs in comments point to eval/sets/adversarial.jsonl.
+Case IDs in comments point to eval/sets/adversarial_ai.jsonl.
 """
 from __future__ import annotations
 
