@@ -34,7 +34,8 @@ except ImportError:
 
 
 def run_ticket(ticket: Ticket, k: Optional[int] = None, model: Optional[str] = None,
-               backend: Optional[str] = None) -> PipelineResult:
+               backend: Optional[str] = None, precedents: Optional[list] = None) -> PipelineResult:
+    """precedents: use these instead of calling retrieval (eval only: adversarial cases bring their own evidence)."""
     k = k or int(os.getenv("RAG_K", "3"))
     t = {}
     t0 = time.perf_counter()
@@ -48,7 +49,7 @@ def run_ticket(ticket: Ticket, k: Optional[int] = None, model: Optional[str] = N
     s = lap("preprocess", s)
     tri = _triage(ticket)
     s = lap("triage", s)
-    prec = _retrieve(ticket, k=k)
+    prec = precedents[:k] if precedents is not None else _retrieve(ticket, k=k)
     s = lap("retrieval", s)
     gate = decide(ticket, tri, prec)
     s = lap("gate", s)

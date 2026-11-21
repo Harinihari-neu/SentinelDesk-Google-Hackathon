@@ -45,3 +45,19 @@ def detect_language(text: str) -> str:
         if de == en == 0:
             return "other"
         return "de" if de > en else "en"
+
+
+# ---------- normalisation (used by the guard and by the adversarial scorer) ----------
+import unicodedata  # noqa: E402
+
+# Invisible characters that can split words ("ig​nore"): zero-width, joiners, bidi controls, soft hyphen, BOM
+_INVISIBLE = re.compile(r"[­᠎​-‏‪-‮⁠-⁤⁦-⁩﻿]")
+# Cyrillic/Greek letters that look like Latin ones. NFKC does not map these, so we do.
+_CONFUSABLE = str.maketrans("аеіјорсуххАВЕІЈКМНОРСТХУԁһԛѕԝαβεικνορτυχΑΒΕΗΙΚΜΝΟΡΤΥΧΖ",
+                            "aeijopcyxxABEIJKMHOPCTXYdhqswabeiknoptuxABEHIKMNOPTYXZ")
+
+
+def fold(text: str) -> str:
+    """NFKC (fullwidth -> ASCII), drop invisible characters, map Cyrillic/Greek look-alikes to Latin.
+    For DETECTION and scoring only; the customer's text is never rewritten with this."""
+    return unicodedata.normalize("NFKC", _INVISIBLE.sub("", text or "")).translate(_CONFUSABLE)

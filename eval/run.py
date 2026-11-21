@@ -21,8 +21,10 @@ sys.path.insert(0, str(ROOT))
 
 from app import pipeline  # noqa: E402
 from app.draft import PROMPT_VERSION  # noqa: E402
-from app.schemas import Ticket  # noqa: E402
-from eval.metrics import HEADLINE, METRICS  # noqa: E402
+from app.checks import run_checks  # noqa: E402
+from app.draft import draft as make_draft  # noqa: E402
+from app.schemas import Precedent, Ticket  # noqa: E402
+from eval.metrics import HEADLINE, METRICS, case_failures, case_passes_legacy, sent_reply  # noqa: E402
 
 SETS = ROOT / "eval" / "sets"
 RUNS = ROOT / "eval" / "runs"
@@ -69,6 +71,10 @@ def main():
     ap.add_argument("--backend", default=None)
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--no-adversarial", action="store_true")
+    ap.add_argument("--adv-set", default="adversarial.jsonl", help="file in eval/sets/")
+    ap.add_argument("--gate-bypass", action="store_true",
+                    help="adversarial cases the gate escalated are ALSO drafted (not sent) to measure the LLM + "
+                         "checks layer on its own. Costs one extra LLM call per gate-escalated case.")
     a = ap.parse_args()
 
     loaded, source = load_holdout(a.n, a.smoke)
@@ -81,15 +87,21 @@ def main():
         for r in rows:
             r["label"] = labels.get(r["result"].ticket.ticket_id)
     if not a.no_adversarial:
-        for c in _jsonl(SETS / "adversarial.jsonl"):
+        for c in _jsonl(SETS / a.adv_set):
             t = Ticket(ticket_id=c["id"], subject=c.get("subject"), body=c["body"])
-            rows.append({"set": "adversarial", "result": pipeline.run_ticket(t, k=a.k, model=a.model, backend=a.backend),
-                         "label": None, "case": c})
+            precs = case_precedents(c)
+            res = pipeline.run_ticket(t, k=a.k, model=a.model, backend=a.backend, precedents=precs)
+            row = {"set": "adversarial", "result": res, "label": None, "case": c, "bypass": None}
+            if a.gate_bypass and res.draft is None:
+                row["bypass"] = bypass_draft(res, a)
+            rows.append(row)
+            print(f"{c['id']:<14} {res.status:<17} gate={res.gate.reasons} "
+                  f"fail={case_failures(row)} {res.timings_ms['total']:.0f}ms", flush=True)
 
     main_rows = [r for r in rows if r["set"] != "adversarial"]
     results = []
     for m in METRICS:
-        scope = rows if m["name"] == "adversarial_pass_rate" else main_rows
+        scope = rows if m["stage"] == "robustness" else main_rows
         try:
             v = m["fn"](scope)
         except Exception as e:  # a broken metric must not kill the report
@@ -109,15 +121,82 @@ def main():
                 "failures": r["result"].checks.failures if r["result"].checks else [],
                 "reply": r["result"].draft.reply if r["result"].draft else None,
                 "ms": round(r["result"].timings_ms["total"], 1)} for r in rows]
-    run = {"config": config, "metrics": results, "records": records}
+    for rec, r in zip(records, rows):
+        if r.get("case"):
+            rec.update(adversarial_record(r))
+    adv = adversarial_summary([r for r in rows if r.get("case")])
+    config["gate_bypass"] = a.gate_bypass
+    config["adv_set"] = a.adv_set
+    run = {"config": config, "metrics": results, "adversarial": adv, "records": records}
 
     RUNS.mkdir(parents=True, exist_ok=True)
     REPORTS.mkdir(parents=True, exist_ok=True)
     (RUNS / f"{a.name}.json").write_text(json.dumps(run, indent=1, default=str, ensure_ascii=False))
-    report = {"config": config, "metrics": results, "ladder": ladder()}
+    report = {"config": config, "metrics": results, "adversarial": adv, "ladder": ladder()}
     (REPORTS / "latest.json").write_text(json.dumps(report, indent=1, default=str, ensure_ascii=False))
     (REPORTS / "latest.md").write_text(to_markdown(report))
     print(to_markdown(report))
+
+
+def case_precedents(c):
+    """Adversarial cases may bring their own evidence (needed for KB-poisoning cases, and so stub retrieval
+    doesn't escalate everything as 'no close precedent'). Without it, normal retrieval runs."""
+    if not c.get("precedents"):
+        return None
+    return [Precedent(ticket_id=p["id"], score=p.get("score", 0.8), language=p.get("lang", "en"),
+                      subject=p.get("subject"), body=p.get("body", ""), answer=p["answer"]) for p in c["precedents"]]
+
+
+def bypass_draft(res, a):
+    """Layer test: what would the LLM + checks have done if the gate had let this ticket through?"""
+    from app.textproc import mask_pii
+    t = res.ticket
+    masked = t.model_copy(update={"subject": mask_pii(t.subject or "")[0] or None, "body": mask_pii(t.body)[0]})
+    d, call = make_draft(masked, res.precedents, model=a.model, backend=a.backend)
+    chk = run_checks(d, t, res.precedents, llm_error=call.error)
+    return {"reply": d.reply, "cited": d.cited_ticket_ids, "failures": chk.failures, "passed": chk.passed,
+            "tokens": call.in_tokens + call.out_tokens, "latency_ms": round(call.latency_ms, 1)}
+
+
+def _leaks(c, text):
+    from app.textproc import fold
+    low = fold(text or "").lower()
+    return [s for s in c.get("expect", {}).get("must_not_contain", []) if fold(s).lower() in low]
+
+
+def adversarial_record(r):
+    c, res, b = r["case"], r["result"], r.get("bypass")
+    raw = res.draft.reply if res.draft else (b or {}).get("reply")
+    raw_fail = res.checks.failures if res.checks else (b or {}).get("failures")
+    return {"category": c.get("category"), "lang": c.get("lang"), "case_failures": case_failures(r),
+            "passed": not case_failures(r), "passed_legacy": case_passes_legacy(r),
+            "sent": sent_reply(res) is not None, "tokens": res.llm_tokens,
+            # layer view: the LLM's own output (drafted by the pipeline or, if the gate stopped it, by --gate-bypass)
+            "llm_reply": raw, "llm_reply_failures": raw_fail, "llm_obeyed": bool(raw and _leaks(c, raw)),
+            "checks_blocked": bool(raw and _leaks(c, raw) and raw_fail), "bypass": b is not None}
+
+
+def adversarial_summary(A):
+    """Per category: pass rate, plus the layer view (how often the LLM itself produced a forbidden string,
+    and how often the checks then stopped it)."""
+    if not A:
+        return {}
+    cats = {}
+    for r in A:
+        cats.setdefault(r["case"].get("category", "?"), []).append(r)
+    out = {}
+    for cat, rs in sorted(cats.items()):
+        recs = [adversarial_record(r) for r in rs]
+        out[cat] = {"n": len(rs), "pass": sum(x["passed"] for x in recs),
+                    "pass_legacy": sum(x["passed_legacy"] for x in recs),
+                    "escalated": sum(r["result"].status != "auto_draft_ready" for r in rs),
+                    "sent": sum(x["sent"] for x in recs),
+                    "llm_drafted": sum(x["llm_reply"] is not None for x in recs),
+                    "llm_obeyed": sum(x["llm_obeyed"] for x in recs),
+                    "checks_blocked": sum(x["checks_blocked"] for x in recs)}
+    tot = {k: sum(v[k] for v in out.values()) for k in next(iter(out.values()))}
+    out["ALL"] = tot
+    return out
 
 
 def ladder():
@@ -148,6 +227,13 @@ def to_markdown(rep):
     lines += [f"- **{h}**: {_fmt(vals.get(h))}" for h in HEADLINE]
     lines += ["", "## All metrics", "", "| Stage | Metric | Value | Decision it drives |", "|---|---|---|---|"]
     lines += [f"| {m['stage']} | {m['name']} | {_fmt(m['value'])} | {m['decision']} |" for m in rep["metrics"]]
+    if rep.get("adversarial"):
+        cols = ["n", "pass", "pass_legacy", "escalated", "sent", "llm_drafted", "llm_obeyed", "checks_blocked"]
+        lines += ["", "## Adversarial set by category", "",
+                  "llm_obeyed = the LLM's own draft contained a forbidden string (gate-escalated cases are only "
+                  "drafted with --gate-bypass); checks_blocked = of those, the checks stopped it.", "",
+                  "| category | " + " | ".join(cols) + " |", "|---|" + "---|" * len(cols)]
+        lines += [f"| {cat} | " + " | ".join(str(v[k]) for k in cols) + " |" for cat, v in rep["adversarial"].items()]
     if rep["ladder"]:
         cols = ["run", "model", "k", "triage", "source"] + HEADLINE
         lines += ["", "## Ladder (all saved runs)", "", "| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
