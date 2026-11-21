@@ -3,6 +3,7 @@
     python eval/run.py --name baseline                 # holdout sample (needs data split), else smoke set
     python eval/run.py --name smoke --smoke            # force the built-in smoke set
     LLM_BACKEND=fake python eval/run.py --smoke        # fully offline
+    python eval/run.py --name reuse --drafter reuse    # no-LLM baseline: send the top precedent's answer
 
 Writes eval/runs/<name>.json, eval/reports/latest.json and eval/reports/latest.md.
 Holdout labels are read ONLY here, after the pipeline has produced its predictions.
@@ -22,7 +23,7 @@ sys.path.insert(0, str(ROOT))
 from app import pipeline  # noqa: E402
 from app.draft import PROMPT_VERSION  # noqa: E402
 from app.checks import run_checks  # noqa: E402
-from app.draft import draft as make_draft  # noqa: E402
+from app.draft import REUSE_MODEL, reuse_draft, draft as make_draft  # noqa: E402
 from app.schemas import Precedent, Ticket  # noqa: E402
 from eval.metrics import HEADLINE, METRICS, case_failures, case_passes_legacy, sent_reply  # noqa: E402
 
@@ -70,17 +71,20 @@ def main():
     ap.add_argument("--model", default=None)
     ap.add_argument("--backend", default=None)
     ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--drafter", choices=["llm", "reuse"], default=None,
+                    help="reuse = no-LLM baseline (top precedent's stored answer). Default: env DRAFTER or llm")
     ap.add_argument("--no-adversarial", action="store_true")
     ap.add_argument("--adv-set", default="adversarial.jsonl", help="file in eval/sets/")
     ap.add_argument("--gate-bypass", action="store_true",
                     help="adversarial cases the gate escalated are ALSO drafted (not sent) to measure the LLM + "
                          "checks layer on its own. Costs one extra LLM call per gate-escalated case.")
     a = ap.parse_args()
+    a.drafter = a.drafter or os.getenv("DRAFTER", "llm")
 
     loaded, source = load_holdout(a.n, a.smoke)
     rows = []
     for t, lab in loaded:
-        rows.append({"set": source, "result": pipeline.run_ticket(t, k=a.k, model=a.model, backend=a.backend),
+        rows.append({"set": source, "result": pipeline.run_ticket(t, k=a.k, model=a.model, backend=a.backend, drafter=a.drafter),
                      "label": lab, "case": None})
     if source == "holdout":
         labels = attach_labels([t for t, _ in loaded])
@@ -90,7 +94,8 @@ def main():
         for c in _jsonl(SETS / a.adv_set):
             t = Ticket(ticket_id=c["id"], subject=c.get("subject"), body=c["body"])
             precs = case_precedents(c)
-            res = pipeline.run_ticket(t, k=a.k, model=a.model, backend=a.backend, precedents=precs)
+            res = pipeline.run_ticket(t, k=a.k, model=a.model, backend=a.backend, precedents=precs,
+                                     drafter=a.drafter)
             row = {"set": "adversarial", "result": res, "label": None, "case": c, "bypass": None}
             if a.gate_bypass and res.draft is None:
                 row["bypass"] = bypass_draft(res, a)
@@ -110,7 +115,8 @@ def main():
 
     config = {"name": a.name, "source": source, "n": len(main_rows), "n_adversarial": len(rows) - len(main_rows),
               "k": a.k or int(os.getenv("RAG_K", "3")), "backend": a.backend or os.getenv("LLM_BACKEND", "gemini"),
-              "model": a.model or os.getenv("LLM_MODEL", "gemini-3.5-flash-lite"),
+              "model": REUSE_MODEL if a.drafter == "reuse" else (a.model or os.getenv("LLM_MODEL", "gemini-3.5-flash-lite")),
+              "drafter": a.drafter,
               "triage": pipeline.TRIAGE_SOURCE, "retrieval": pipeline.RETRIEVAL_SOURCE,
               "triage_version": rows[0]["result"].triage.model_version if rows else None,
               "prompt": PROMPT_VERSION, "fallbacks": os.getenv("LLM_MODEL_FALLBACKS", ""),
@@ -152,7 +158,10 @@ def bypass_draft(res, a):
     from app.textproc import mask_pii
     t = res.ticket
     masked = t.model_copy(update={"subject": mask_pii(t.subject or "")[0] or None, "body": mask_pii(t.body)[0]})
-    d, call = make_draft(masked, res.precedents, model=a.model, backend=a.backend)
+    if a.drafter == "reuse":
+        d, call = reuse_draft(masked, res.precedents)
+    else:
+        d, call = make_draft(masked, res.precedents, model=a.model, backend=a.backend)
     chk = run_checks(d, t, res.precedents, llm_error=call.error)
     return {"reply": d.reply, "cited": d.cited_ticket_ids, "failures": chk.failures, "passed": chk.passed,
             "tokens": call.in_tokens + call.out_tokens, "latency_ms": round(call.latency_ms, 1)}
