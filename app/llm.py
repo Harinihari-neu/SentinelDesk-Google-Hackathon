@@ -90,7 +90,10 @@ def _gemini(system, user, schema, model, max_tokens, temperature):
     from google.genai import types
 
     if _gemini_client is None:
-        _gemini_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+        key = os.getenv("GEMINI_API_KEY")
+        # With no key, the SDK reads Vertex AI settings from env:
+        # GOOGLE_GENAI_USE_VERTEXAI=true, GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION (+ gcloud ADC login)
+        _gemini_client = genai.Client(api_key=key) if key else genai.Client()
     cfg = dict(system_instruction=system, temperature=temperature, max_output_tokens=max_tokens,
                response_mime_type="application/json", response_schema=schema)
     budget = os.getenv("LLM_THINKING_BUDGET")  # e.g. "0" to switch thinking off on 2.5 Flash
