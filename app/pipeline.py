@@ -13,7 +13,7 @@ import time
 import uuid
 from typing import Optional
 
-from app.checks import run_checks
+from app.checks import is_deferral, run_checks
 from app.draft import draft as make_draft
 from app.gate import decide
 from app.schemas import PipelineResult, Ticket
@@ -61,13 +61,16 @@ def run_ticket(ticket: Ticket, k: Optional[int] = None, model: Optional[str] = N
         checks = run_checks(draft, ticket, prec, llm_error=call.error)
         tokens, cost = call.in_tokens + call.out_tokens, call.cost_usd
         fb = os.getenv("LLM_FALLBACK_MODEL")
-        if not checks.passed and fb:  # step 6: one retry on a larger model
+        # step 6: one retry on a larger model when checks fail (not on auth/config errors: they fail everywhere)
+        if not checks.passed and fb and call.error_kind not in ("auth", "config"):
             draft, call = make_draft(masked, prec, model=fb, backend=backend)
             checks = run_checks(draft, ticket, prec, llm_error=call.error)
             tokens += call.in_tokens + call.out_tokens
             cost += call.cost_usd
         s = lap("draft_and_checks", s)
-        status = "auto_draft_ready" if checks.passed else "escalated"
+        # a passing deferral ("a specialist will follow up") is a holding reply: send it, but a human owns the ticket
+        holding = not draft.cited_ticket_ids and is_deferral(draft.reply)
+        status = "auto_draft_ready" if checks.passed and not holding else "escalated"
     t["total"] = (time.perf_counter() - t0) * 1000
     return PipelineResult(ticket=ticket, triage=tri, precedents=prec, gate=gate, draft=draft, checks=checks,
                           status=status, timings_ms=t, llm_tokens=tokens, llm_cost_usd=cost)

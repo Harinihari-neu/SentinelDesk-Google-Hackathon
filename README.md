@@ -15,7 +15,12 @@ Interfaces: [docs/CONTRACTS.md](docs/CONTRACTS.md). Team rules: [AGENTS.md](AGEN
 | `docs/` | Plan and architecture |
 
 ## Setup
-_TBD once the stack is chosen._ Copy `.env.example` to `.env` and fill in keys.
+**Requires Python 3.10+** (tested on 3.12). With uv:
+```bash
+uv python install 3.12 && uv venv --python 3.12 .venv && uv pip install -r requirements.txt
+source .venv/bin/activate
+```
+Copy `.env.example` to `.env` and fill in keys.
 
 ## Mocked for the demo
 _List anything mocked here. Never present a mock as real._
