@@ -125,6 +125,7 @@ Outputs:
   - `app/draft.py`: `MAX_TICKET_CHARS = 3000` (prompt wording unchanged; `PROMPT_VERSION` stays v1.1).
   - Results: `guard-baseline` 0.672 → `guard-v1` 1.000 (over-blocking 1/10 → 0/10); fresh set `guard-fresh-baseline` 0.500 → `guard-fresh-v1` 0.778.
   - `tests/test_guardrails.py`: 17 offline tests.
+  - Shared-working-tree incident: commits recovered onto `feat/guardrails` by cherry-pick; `reuse_draft()` removed here (belongs to PR #3). Rule: one agent per worktree.
 - v1.3 (2026-11-21): error handling, German fixes, prompt v1.1. All numbers on gemini-3.5-flash-lite.
   - **German test** (`eval/german_probe.py`, `eval/sets/translation_pairs.jsonl`): 10 hand-written EN/DE ticket pairs, each with its own precedent; gate bypassed. Conditions: en-en, de-de, de-en (German ticket, English precedents). Outputs in `eval/runs/probes/`.
   - Before fixes (`german-probe-v2`, prompt v1): checks pass en-en 8/9, de-de 9/10, de-en 7/9 (drafts that returned). Failures: one de-en reply fully in English; one de-en reply with "oe/ae/ue" instead of umlauts (not caught); "We have unlocked it" / "Wir haben es entsperrt" past-action claims; refund-trap deferrals failed `no_citations`.

@@ -60,23 +60,3 @@ def draft(ticket: Ticket, precedents: list, model: Optional[str] = None, backend
         d = Draft(reply="", cited_ticket_ids=[], language=ticket.language or "en", model=call.model)
     return d, call
 
-
-# ---------------- no-LLM baseline ----------------
-REUSE_MODEL = "reuse-top1"  # Draft.model value for the baseline; never an LLM, so no tokens and no cost
-
-
-def reuse_draft(ticket: Ticket, precedents: list):
-    """Baseline drafter (generation ladder rung 0): send back the closest precedent's stored answer, unchanged.
-
-    Zero tokens, zero cost, grounded by construction. The LLM drafter has to beat this to earn its place.
-    Expected weak spots: wrong language when the precedent's language differs from the ticket's, another
-    customer's details, and answers that don't fit this ticket. The checks catch the first two (language_mismatch,
-    pii_in_reply); relevance is not checked, so checks_pass_rate overstates the baseline's quality.
-    Same return shape as draft(): (Draft, LLMCall)."""
-    lang = ticket.language or "en"
-    top = precedents[0] if precedents else None
-    d = Draft(reply=top.answer if top else "", cited_ticket_ids=[top.ticket_id] if top else [],
-              language=lang, model=REUSE_MODEL)
-    call = llm.LLMCall(backend="none", model=REUSE_MODEL, text=d.reply, parsed=None, parse_ok=True,
-                       latency_ms=0.0, in_tokens=0, out_tokens=0, cost_usd=0.0)
-    return d, call
